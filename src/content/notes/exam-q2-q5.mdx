@@ -1,29 +1,34 @@
 ---
 title: "Past Paper: Q2–Q5 Solved"
-description: "Worked answers to past-paper questions 2 to 5 (induction, the rule of consequence, the swap proof and the factorial proof), with the reasoning behind each step and where the marks go."
+description: "Past-paper questions 2–5: induction, the rule of consequence, the swap proof and the factorial proof."
 part: exam
 order: 1
 ---
 import { Callout, Fold, Rules, Rule, Proof, Mermaid, Flashcards, Quiz } from '@/components/notes';
 
-This page works through questions 2 to 5 of the past end-semester paper. They test the material of the <a href={`${import.meta.env.BASE_URL}induction/`}>induction</a> and <a href={`${import.meta.env.BASE_URL}hoare-logic/`}>Hoare logic</a> pages: what the induction principle actually says, which uses of the rule of consequence are sound, and how to write a proof outline for straight-line code and for a loop. For each question we give the answer, but the emphasis is on *why* it is the answer, since the same reasoning is what earns partial credit when a question is phrased differently. The answers are Q2 = C and Q3 = A, D, F, and Q4 and Q5 are proofs whose every step is written out below.
-
-<Callout type="important" title="Scope of the paper">
-Only Q2–Q5 are in the syllabus. Q1 and Q6–Q9 (threads, execution graphs, memory models, mutual exclusion, Peterson's algorithm) belong to another course and can be skipped. The paper says to *assume standard Hoare-logic axioms and rules*, and **partial credit is given for correct reasoning**, so name the rule you use at every step.
-</Callout>
-
-The paper writes programs in the lectures' `while`-language: `x := E` is assignment (Python's `x = E`), `;` separates statements, and `while (B) { … }` is a loop. It writes `→` for implication, which is the same as `⇒` on the Hoare logic page, and `⊢` for "from the premises on the left, we may derive the conclusion on the right".
-
 ## Q2: Induction basics
 
-*[2 marks]* Let `P : ℕ → Prop` be a property of natural numbers (a function from each natural number to a statement that may be true or false). Consider the statements
+*Mathematical Induction Basics [2 marks]*
+
+Consider the following statements, where `ℕ` is the set of all natural numbers and `P` is a property of natural numbers (i.e., `P : ℕ → Prop`).
 
 - S1: `P(0)`
 - S2: `P(k) → P(k+1)`
 - S3: `P(n)`
 - S4: `∀n ∈ ℕ, P(n)`
 
-The question asks which of the following correctly describes proof by induction. A: it proves S3 from S1 and S2. B: it proves `∀n, S3` from S1 and S2. C: it proves S4 from S1 and `∀k ∈ ℕ, S2`. D: none of the above.
+Which of the following options are correct?
+
+- A. Principle of mathematical induction helps us prove S3 by proving S1 and S2.
+- B. Principle of mathematical induction helps us prove `(∀n ∈ ℕ, S3)` by proving S1 and S2.
+- C. Principle of mathematical induction helps us prove S4 by proving S1 and `(∀k ∈ ℕ, S2)`.
+- D. None of the above.
+
+<Callout type="tip" title="Answer: C">
+Induction concludes the universal statement S4 from the base case S1 and a step S2 that holds **for every** `k`. A and B use S2 for one unspecified `k` only, and A's conclusion S3 is not a universal statement.
+</Callout>
+
+<Fold title="Full explanation">
 
 The key is to read S2 and S3 carefully. Neither contains a quantifier: `k` in S2 and `n` in S3 are **free variables**, names that are not bound by any `∀` or `∃`. A formula with a free variable is an *open* formula. On its own it is not a claim about all numbers, only about whichever number the name happens to stand for. The induction principle, by contrast, is a claim about all natural numbers, and its step premise must hold for *every* `k`:
 
@@ -35,13 +40,32 @@ Read this as a chain: `P(0)` holds; the step with `k = 0` gives `P(1)`; the step
 
 Options A and B both use S2 without the quantifier, so the step is known only for one particular `k`. That is not enough. To see this, take `P(n)` to be `n = 0`. Then `P(0)` is true. For `k = 5`, the step `P(5) → P(6)` is also true, because its left side `5 = 0` is false and an implication with a false left side holds. Yet `∀n. P(n)` is plainly false. So a base case plus a step for one `k` does not give the conclusion. Option A is wrong for a second reason as well: its conclusion S3 is an open formula, not the universal statement that induction establishes. Option B has the right conclusion but the wrong premise. Since C is correct, D is wrong.
 
-<Callout type="important" title="Answer: C">
-Induction proves S4 from S1 and `∀k ∈ ℕ, S2`. The <a href={`${import.meta.env.BASE_URL}induction/`}>induction</a> page discusses this principle and its variants in full.
-</Callout>
+The <a href={`${import.meta.env.BASE_URL}induction/`}>induction</a> page discusses this principle and its variants in full.
+
+</Fold>
 
 ## Q3: Which Cons moves are legal?
 
-*[3 marks]* This question tests the **rule of consequence** ("Cons"). Recall it from the Hoare logic page:
+*Hoare Logic Inference Rules [3 marks]*
+
+Consider the following statements, where `{P}S{Q}` represents the Hoare triple used for specifying the partial correctness of program `S`.
+
+- A. If `{P}S{Q}` and `Q → R` then `{P}S{R}`
+- B. If `{P}S{Q}` and `R → P` then `{P}S{R}`
+- C. If `{P}S{Q}` and `P → R` then `{R}S{Q}`
+- D. If `{P}S{Q}` and `R → P` then `{R}S{Q}`
+- E. If `{P}S{Q}` and `R → Q` then `{P}S{R}`
+- F. If `{P}S₁{Q₁}`, `Q₁ → Q₂`, and `{Q₂}S₂{Q}` then `{P}S{Q}`, where `S = S₁; S₂`
+
+Which of the above statements are correct?
+
+<Callout type="tip" title="Answer: A, D, F">
+The rule of consequence only allows **strengthening the precondition** (D: the new pre implies the old one) and **weakening the postcondition** (A: the old post implies the new one). F weakens the first half's postcondition to `Q₂` and then joins the halves with the sequence rule. B, C and E move in the wrong direction.
+</Callout>
+
+<Fold title="Full explanation">
+
+Recall the rule of consequence from the <a href={`${import.meta.env.BASE_URL}hoare-logic/`}>Hoare logic</a> page:
 
 ```text
 P ⇒ P′      {P′} S {Q′}      Q′ ⇒ Q
@@ -58,18 +82,16 @@ It allows two moves on a proved triple: **strengthen the precondition**, replaci
 
 Why these directions and not the others? Think of each assertion as the set of states that satisfy it. If `R → P`, every state in `R` is also in `P`, so `R` is the smaller set. The triple `{P} S {Q}` promises good behaviour from every state in `P`, so in particular from every state in the smaller set `R`. On the other side, if `Q → R`, then every final state in `Q` is also in `R`, so a program that always ends in `Q` always ends in `R`. The reverse moves would require `S` to behave well from states we know nothing about, or to land in a smaller set than we proved it lands in.
 
-With that test, each option can be decided by asking "which way does the given implication point, and is that the allowed direction?"
+| | Legal? | Reason |
+|---|---|---|
+| A | yes | weakens the post: the old post implies the new one |
+| B | no | the post is replaced by `R`, but nothing says `Q → R` |
+| C | no | the new pre is implied by the old one: this weakens the pre |
+| D | yes | strengthens the pre: the new pre implies the old one |
+| E | no | the new post implies the old one: this strengthens the post |
+| F | yes | Cons weakens the first post to `Q₂`, then Seq joins the halves |
 
-| | Statement | Legal? | Reason |
-|---|---|---|---|
-| A | `{P}S{Q}`, `Q → R` ⊢ `{P}S{R}` | yes | weakens the post: the old post implies the new one |
-| B | `{P}S{Q}`, `R → P` ⊢ `{P}S{R}` | no | the post is replaced by `R`, but nothing says `Q → R` |
-| C | `{P}S{Q}`, `P → R` ⊢ `{R}S{Q}` | no | the new pre is implied by the old one: this weakens the pre |
-| D | `{P}S{Q}`, `R → P` ⊢ `{R}S{Q}` | yes | strengthens the pre: the new pre implies the old one |
-| E | `{P}S{Q}`, `R → Q` ⊢ `{P}S{R}` | no | the new post implies the old one: this strengthens the post |
-| F | `{P}S₁{Q₁}`, `Q₁ → Q₂`, `{Q₂}S₂{Q}` ⊢ `{P}S₁;S₂{Q}` | yes | Cons weakens the first post to `Q₂`, then Seq joins the halves |
-
-Option B is a trap because its implication `R → P` is the right shape for strengthening a precondition, but it is used to change the *postcondition*, where it says nothing useful. Option F combines two rules. Cons turns `{P}S₁{Q₁}` into `{P}S₁{Q₂}` by weakening the postcondition, and then the two triples meet at `Q₂`, which is exactly what the sequence rule needs:
+Option B is a trap because its implication `R → P` is the right shape for strengthening a precondition, but it is used to change the *postcondition*, where it says nothing useful. Option F combines two rules:
 
 <Rules>
   <Rule name="Cons" premises={["P ⇒ P", "{P} S₁ {Q₁}", "Q₁ ⇒ Q₂"]} conclusion="{P} S₁ {Q₂}" />
@@ -78,9 +100,7 @@ Option B is a trap because its implication `R → P` is the right shape for stre
 
 (The left premise `P ⇒ P` is trivially true: the precondition is left unchanged.)
 
-To show that an option is *not* a valid rule, it is enough to give one instance where the premises hold and the conclusion fails. Writing these counterexamples is good practice and earns partial credit.
-
-<Fold title="Counterexamples for B, C and E">
+To show that an option is *not* a valid rule, it is enough to give one instance where the premises hold and the conclusion fails. Writing these counterexamples earns partial credit:
 
 - **C:** `{x = 1} y = x {y = 1}` is valid. Take `R ≡ True`, so `P → R` holds. The conclusion `{True} y = x {y = 1}` is false: start with `x = 2`.
 - **E:** `{True} x = 5 {x > 0}` is valid. Take `R ≡ x > 10`, so `R → Q` holds. The conclusion `{True} x = 5 {x > 10}` is false.
@@ -88,21 +108,42 @@ To show that an option is *not* a valid rule, it is enough to give one instance 
 
 </Fold>
 
-<Callout type="important" title="Answer: A, D, F">
-Only strengthening the precondition (D) and weakening the postcondition (A, and A's move inside F) are sound.
-</Callout>
-
 ## Q4: Swap verification
 
-*[3 marks]* Prove that `S ≡ t := x; x := y; y := t` swaps `x` and `y`.
+*Swap Program Verification [3 marks]*
 
-The first task is the specification. A postcondition such as `x = y ∧ y = x` would be useless, since it refers only to final values. We need **auxiliary** (ghost) variables `X` and `Y` that record the starting values. They appear only in assertions, never in the program, so the program cannot change them. (The paper writes them in capitals; the Cambridge lectures use the opposite convention, but the idea is the same.) The specification is
+Let `S` be the following sequential program to swap the values in the variables `x` and `y`:
 
 ```text
-{x = X ∧ y = Y}  t := x; x := y; y := t  {x = Y ∧ y = X}
+t := x;
+x := y;
+y := t;
 ```
 
-In Python the program is `t = x; x = y; y = t`.
+Write the partial correctness specification for `S` using a Hoare triple and justify its correctness using the Axioms and Inference Rules for Hoare logic.
+
+<Callout type="tip" title="Answer">
+
+Specification, with ghost variables `X` and `Y` for the starting values: `{x = X ∧ y = Y} S {x = Y ∧ y = X}`.
+
+Proof: apply the assignment rule three times from the bottom up, join with Seq, and reorder the first conjuncts with Cons.
+
+</Callout>
+
+<Proof lines={[
+  { a: "{ x = X ∧ y = Y }" },
+  { a: "⇔ { y = Y ∧ x = X }", j: "Cons: ∧ commutes" },
+  { c: "t := x", j: "Assign: t ↦ x" },
+  { a: "{ y = Y ∧ t = X }" },
+  { c: "x := y", j: "Assign: x ↦ y" },
+  { a: "{ x = Y ∧ t = X }" },
+  { c: "y := t", j: "Assign: y ↦ t" },
+  { a: "{ x = Y ∧ y = X }" },
+]} />
+
+<Fold title="Full explanation">
+
+The first task is the specification. A postcondition such as `x = y ∧ y = x` would be useless, since it refers only to final values. We need **auxiliary** (ghost) variables `X` and `Y` that record the starting values. They appear only in assertions, never in the program, so the program cannot change them. In Python the program is `t = x; x = y; y = t`.
 
 The proof uses the assignment rule `{Q[E/x]} x := E {Q}`, where `Q[E/x]` means `Q` with `E` substituted for every occurrence of `x`. The rule works backwards, so we start from the postcondition at the bottom and push it up through each assignment.
 
@@ -110,30 +151,19 @@ The proof uses the assignment rule `{Q[E/x]} x := E {Q}`, where `Q[E/x]` means `
 2. Before `x := y`, substitute `y` for `x` in that. This gives `y = Y ∧ t = X`.
 3. Before `t := x`, substitute `x` for `t`. This gives `y = Y ∧ x = X`.
 
-The assertion we reach at the top, `y = Y ∧ x = X`, is the given precondition with its two conjuncts in the other order. Since `∧` is commutative, the two are logically equivalent, and the rule of consequence connects them. Written as a proof outline, top to bottom:
-
-<Proof lines={[
-  { a: "{ x = X ∧ y = Y }" },
-  { a: "⇔ { y = Y ∧ x = X }", j: "Cons: ∧ commutes (logically identical)" },
-  { c: "t := x", j: "Assign: t ↦ x" },
-  { a: "{ y = Y ∧ t = X }" },
-  { c: "x := y", j: "Assign: x ↦ y" },
-  { a: "{ x = Y ∧ t = X }" },
-  { c: "y := t", j: "Assign: y ↦ t" },
-  { a: "{ x = Y ∧ y = X }", j: "post Q" },
-]} />
-
-In summary: the assignment rule is used three times, working from the bottom up; the sequence rule is used twice to join the three triples into `{y = Y ∧ x = X} S {x = Y ∧ y = X}`; and Cons reorders the conjuncts to match the given precondition. ∎
+The assertion we reach at the top, `y = Y ∧ x = X`, is the given precondition with its two conjuncts in the other order. Since `∧` is commutative, the two are logically equivalent, and the rule of consequence connects them. The sequence rule is used twice to join the three triples into one. ∎
 
 The midconditions have a clear meaning, which is a useful check on the algebra. After `t := x`, `t` holds the old `x`. After `x := y`, `x` holds the old `y` while `t` still holds the old `x`. The last assignment copies the old `x` into `y`.
 
-<Callout type="important" title="Marking">
-About **+1 per correct midcondition**: `{x = X, y = Y}`, `{y = Y, t = X}`, `{x = Y, t = X}` and the final `{x = Y, y = X}`.
-</Callout>
+**Marking:** about +1 per correct midcondition: `{x = X, y = Y}`, `{y = Y, t = X}`, `{x = Y, t = X}` and the final `{x = Y, y = X}`.
+
+</Fold>
 
 ## Q5: Factorial specification and invariant
 
-*[4 marks]* The program is
+*Factorial Program Verification [4 marks]*
+
+Let `S` be the following factorial program:
 
 ```text
 y := 1;
@@ -143,28 +173,44 @@ while (x != 0) {
 }
 ```
 
-which in Python is
+Write a partial correctness specification for `S` using a Hoare triple and justify its correctness using the Axioms and Inference Rules for Hoare logic. Your solution must include: (1) a suitable loop invariant, (2) proof of invariant initialization, (3) proof of invariant preservation, and (4) proof that invariant + loop condition implies the postcondition.
 
-```python
-y = 1
-while x != 0:
-    y = y * x
-    x = x - 1
-```
+<Callout type="tip" title="Answer">
 
-and we must specify it, give a loop invariant, and prove it correct.
+- **Specification:** `{x = X ∧ X ≥ 0} S {y = X!}`
+- **Invariant:** `I ≡ y · x! = X! ∧ x ≥ 0` ("`y` is the product computed so far, `x!` is what remains").
+- **Initialisation:** after `y := 1`, `1 · x! = X!` because `x = X`.
+- **Preservation:** if `I` holds and `x ≠ 0`, then `x ≥ 1`, and `(y·x)·(x−1)! = y·x! = X!`.
+- **Exit:** `x = 0` gives `y · 0! = y = X!`.
+
+</Callout>
+
+<Proof lines={[
+  { a: "{ x = X ∧ X ≥ 0 }" },
+  { a: "⇒ { 1 · x! = X! ∧ x ≥ 0 }", j: "Cons" },
+  { c: "y := 1", j: "Assign" },
+  { i: "{ I : y · x! = X! ∧ x ≥ 0 }", j: "(2) initialisation" },
+  { c: "while (x != 0) {" },
+  { a: "{ I ∧ x ≠ 0 }", indent: 1 },
+  { a: "⇒ { (y·x) · (x−1)! = X! ∧ x−1 ≥ 0 }", indent: 1, j: "Cons: x ≥ 1, x·(x−1)! = x!" },
+  { c: "y := y * x", indent: 1, j: "Assign" },
+  { a: "{ y · (x−1)! = X! ∧ x−1 ≥ 0 }", indent: 1 },
+  { c: "x := x - 1", indent: 1, j: "Assign" },
+  { i: "{ I }", indent: 1, j: "(3) preservation" },
+  { c: "}" },
+  { a: "{ I ∧ x = 0 }", j: "While" },
+  { a: "⇒ { y = X! }", j: "(4) Cons: 0! = 1" },
+]} />
+
+<Fold title="Full explanation">
 
 ### The specification
 
-The program computes the factorial of the starting value of `x` into `y`. As in Q4, the starting value of `x` is destroyed (the loop counts it down to 0), so the postcondition must refer to it through an auxiliary variable `X`. Factorial is defined only on natural numbers, so the precondition must also say `X ≥ 0`. This is not a formality. If `x` starts negative, `x - 1` never reaches 0 and the loop runs forever. Under partial correctness that run would not violate the specification, but the invariant below mentions `x!`, which only makes sense when `x ≥ 0`. The specification is
-
-```text
-{x = X ∧ X ≥ 0}  S  {y = X!}
-```
+The program computes the factorial of the starting value of `x` into `y`. As in Q4, the starting value of `x` is destroyed (the loop counts it down to 0), so the postcondition must refer to it through an auxiliary variable `X`. Factorial is defined only on natural numbers, so the precondition must also say `X ≥ 0`. This is not a formality. If `x` starts negative, `x - 1` never reaches 0 and the loop runs forever. Under partial correctness that run would not violate the specification, but the invariant mentions `x!`, which only makes sense when `x ≥ 0`.
 
 ### Finding the invariant
 
-The Cambridge lecture 2 verifies this exact program (written with capital program variables, and with `Y = 1` in the precondition instead of the first assignment) and shows how to *find* the invariant rather than guess it. The method is to run the loop by hand, record the variables after each iteration, and look for a relationship that stays the same. Writing `X` for the starting value of `x`:
+Run the loop by hand, record the variables after each iteration, and look for a relationship that stays the same. Writing `X` for the starting value of `x`:
 
 | iteration | `x` | `y` |
 |---|---|---|
@@ -175,13 +221,7 @@ The Cambridge lecture 2 verifies this exact program (written with capital progra
 | … | … | … |
 | `X` | `0` | `1 · X · (X − 1) · … · 1` |
 
-Reading across a row, `y` is the product of the factors already multiplied in, from `X` down to `x + 1`, and the factors still to come are `x, x − 1, …, 1`, whose product is `x!`. In the lecture's words, `y` is the value computed so far, and `x!` remains to be computed. So the product of the two is always the whole factorial:
-
-```text
-I  ≡  y · x! = X! ∧ x ≥ 0
-```
-
-The second conjunct is needed so that `x!` is defined. (The teacher wrote the first conjunct as `x! · y = X!`, which is the same thing.) A concrete run with `X = 4` confirms that the product stays fixed:
+Reading across a row, `y` is the product of the factors already multiplied in, from `X` down to `x + 1`, and the factors still to come are `x, x − 1, …, 1`, whose product is `x!`. So the product of the two is always the whole factorial: `y · x! = X!`. The second conjunct `x ≥ 0` is needed so that `x!` is defined. (The teacher wrote the first conjunct as `x! · y = X!`, which is the same thing.) A run with `X = 4`:
 
 | step | `x` | `y` | `y · x!` |
 |---|---|---|---|
@@ -191,50 +231,19 @@ The second conjunct is needed so that `x!` is defined. (The teacher wrote the fi
 | 3 | 1 | 24 | 24 · 1 = 24 |
 | exit | 0 | 24 | 24 · 1 = 24 |
 
-At exit `x = 0` and `0! = 1`, so the invariant gives `y = X!`, which is the postcondition. This already shows the invariant is strong enough. A table is not a proof, though, so we now discharge the three loop obligations formally.
-
-## Q5: The proof outline
-
-The loop rule needs an invariant that holds initially, is preserved by the body when the test is true, and together with the failed test implies the postcondition. Each gives one mark, and the invariant itself gives the fourth.
-
 ### Initialisation
 
-We must show `{x = X ∧ X ≥ 0} y := 1 {I}`. Working backwards, the assignment rule substitutes `1` for `y` in `I`, giving `1 · x! = X! ∧ x ≥ 0`. It remains to show that the given precondition implies this, and it does: `x = X` gives `x! = X!`, and `x = X ≥ 0` gives `x ≥ 0`.
-
-<Proof lines={[
-  { a: "{ x = X ∧ X ≥ 0 }" },
-  { a: "⇒ { 1 · x! = X! ∧ x ≥ 0 }", j: "Cons: x = X gives x! = X!, and x = X ≥ 0" },
-  { c: "y := 1", j: "Assign: I[y ↦ 1]" },
-  { i: "{ y · x! = X! ∧ x ≥ 0 } = I" },
-]} />
-
-This is the pattern for every initialisation step: compute the substituted invariant backwards, then bridge to the given precondition with Cons.
+We must show `{x = X ∧ X ≥ 0} y := 1 {I}`. Working backwards, the assignment rule substitutes `1` for `y` in `I`, giving `1 · x! = X! ∧ x ≥ 0`. The given precondition implies this: `x = X` gives `x! = X!`, and `x = X ≥ 0` gives `x ≥ 0`. This is the pattern for every initialisation step: compute the substituted invariant backwards, then bridge to the given precondition with Cons.
 
 ### Preservation
 
-We must show `{I ∧ x ≠ 0} y := y*x; x := x−1 {I}`. Again we work backwards from `I`. Through `x := x − 1`, substitute `x − 1` for `x`: this gives `y · (x−1)! = X! ∧ x−1 ≥ 0`. Through `y := y * x`, substitute `y · x` for `y`: this gives `(y·x) · (x−1)! = X! ∧ x−1 ≥ 0`.
+We must show `{I ∧ x ≠ 0} y := y*x; x := x−1 {I}`. Through `x := x − 1`, substitute `x − 1` for `x` in `I`: this gives `y · (x−1)! = X! ∧ x−1 ≥ 0`. Through `y := y * x`, substitute `y · x` for `y`: this gives `(y·x) · (x−1)! = X! ∧ x−1 ≥ 0`.
 
-We now need `I ∧ x ≠ 0` to imply that. Two facts do the work. First, `x ≥ 0` and `x ≠ 0` together give `x ≥ 1`, hence `x − 1 ≥ 0`. Second, for `x ≥ 1`, `x · (x−1)! = x!`, which is the defining equation of factorial. So `(y·x)·(x−1)! = y·x! = X!` by the invariant. This is exactly where the conjunct `x ≥ 0` and the loop test `x ≠ 0` are needed: without them `(x−1)!` would be undefined.
-
-<Proof lines={[
-  { a: "{ I ∧ x ≠ 0 } = { y · x! = X! ∧ x ≥ 0 ∧ x ≠ 0 }" },
-  { a: "⇒ { (y·x) · (x−1)! = X! ∧ x−1 ≥ 0 }", j: "Cons: x ≥ 0 ∧ x ≠ 0 ⇒ x ≥ 1, and x·(x−1)! = x! for x ≥ 1" },
-  { c: "y := y * x", j: "Assign: y ↦ y·x" },
-  { a: "{ y · (x−1)! = X! ∧ x−1 ≥ 0 }" },
-  { c: "x := x - 1", j: "Assign: x ↦ x−1 into I" },
-  { i: "{ y · x! = X! ∧ x ≥ 0 } = I" },
-]} />
-
-The sequence rule joins the two assignments into `{I ∧ x ≠ 0} body {I}`, which is the premise of the while rule. The while rule then gives `{I} while (x ≠ 0) {…} {I ∧ x = 0}`.
+We now need `I ∧ x ≠ 0` to imply that. Two facts do the work. First, `x ≥ 0` and `x ≠ 0` together give `x ≥ 1`, hence `x − 1 ≥ 0`. Second, for `x ≥ 1`, `x · (x−1)! = x!`, which is the defining equation of factorial. So `(y·x)·(x−1)! = y·x! = X!` by the invariant. This is exactly where the conjunct `x ≥ 0` and the loop test `x ≠ 0` are needed: without them `(x−1)!` would be undefined. The sequence rule joins the two assignments, and the while rule then gives `{I} while (x ≠ 0) {…} {I ∧ x = 0}`.
 
 ### Exit
 
 When the loop stops, its test has failed, so `¬(x ≠ 0)`, that is `x = 0`. With the invariant, `y · 0! = X!`, and since `0! = 1` this is `y = X!`, the postcondition.
-
-<Proof lines={[
-  { a: "{ I ∧ ¬(x ≠ 0) } = { y · x! = X! ∧ x ≥ 0 ∧ x = 0 }" },
-  { a: "⇒ { y · 0! = X! } ⇒ { y · 1 = X! } ⇒ { y = X! }", j: "Cons: 0! = 1" },
-]} />
 
 ### Putting it together
 
@@ -245,36 +254,43 @@ When the loop stops, its test has failed, so `¬(x ≠ 0)`, that is `x = 0`. Wit
   Body -->|"preservation"| I
   B -- "no: {I ∧ x=0}" --> Post["exit ⇒ {y = X!}"]`} />
 
-The sequence rule joins the initialisation triple to the while triple, and Cons with the exit implication turns the final `I ∧ x = 0` into `y = X!`. Together these give `{x = X ∧ X ≥ 0} S {y = X!}`. ∎
+The sequence rule joins the initialisation triple to the while triple, and Cons with the exit implication turns `I ∧ x = 0` into `y = X!`. ∎
 
-<Callout type="important" title="Where the marks go">
-**+1** invariant, **+1** initialisation, **+1** preservation, **+1** exit. Name the rule (Assign, Seq, Cons, While) at every step.
-</Callout>
-
-<Fold title="Total correctness">
-
-The proof above is of partial correctness: it says that *if* the loop stops, `y = X!`. To show that it does stop, we use a **variant**, a natural-number quantity that strictly decreases on every iteration. Here `x` itself works. The invariant keeps `x ≥ 0`, and each iteration decreases `x` by 1, so it cannot decrease forever, and the loop terminates whenever `X ≥ 0`. That upgrades the result to the total correctness triple `[x = X ∧ X ≥ 0] S [y = X!]`. The question only asks for partial correctness.
+**Marking:** +1 invariant, +1 initialisation, +1 preservation, +1 exit. Name the rule (Assign, Seq, Cons, While) at every step.
 
 </Fold>
 
-<Fold title="Practice drills">
+<Fold title="Total correctness (not asked)">
+
+The proof above is of partial correctness: *if* the loop stops, `y = X!`. To show that it does stop, use a **variant**, a natural-number quantity that strictly decreases on every iteration. Here `x` itself works: the invariant keeps `x ≥ 0`, and each iteration decreases `x` by 1, so the loop terminates whenever `X ≥ 0`. That upgrades the result to the total correctness triple `[x = X ∧ X ≥ 0] S [y = X!]`.
+
+</Fold>
+
+## Practice drills
 
 **Drill 1.** What is the weakest precondition of `x := x + y; y := x − y` for the postcondition `{y = A}`?
-Work backwards. Through `y := x − y`, substitute to get `x − y = A`. Through `x := x + y`, substitute to get `(x + y) − y = A`, which simplifies to `x = A`.
 
-**Drill 2.** Find an invariant for `i := 0; s := 0; while i < n: i := i+1; s := s + i` with postcondition `{s = n(n+1)/2}`, given `n ≥ 0`.
-Tracing shows `s` is always the sum `1 + 2 + … + i`, so take `I ≡ s = i(i+1)/2 ∧ 0 ≤ i ≤ n`. Initialisation: `0 = 0·1/2`. Preservation: `s + (i+1) = i(i+1)/2 + (i+1) = (i+1)(i+2)/2`, and `i < n` gives `i + 1 ≤ n`. Exit: `i ≥ n ∧ i ≤ n ⇒ i = n`, so `s = n(n+1)/2`.
+<Fold title="Answer">
 
-**Drill 3.** Is `{x > 0} x := x − 1 {x ≥ 0}` valid?
-The assignment rule gives `{x − 1 ≥ 0} x := x − 1 {x ≥ 0}`. Over the integers, `x > 0 ⇒ x ≥ 1 ⇒ x − 1 ≥ 0`, so Cons strengthens the precondition to `x > 0` and the triple is valid.
+`x = A`. Work backwards: through `y := x − y`, substitute to get `x − y = A`; through `x := x + y`, substitute to get `(x + y) − y = A`, which simplifies to `x = A`.
 
 </Fold>
 
-## Summary
+**Drill 2.** Find an invariant for `i := 0; s := 0; while i < n: i := i+1; s := s + i` with postcondition `{s = n(n+1)/2}`, given `n ≥ 0`.
 
-Q2 rests on reading quantifiers carefully. The induction principle concludes `∀n. P(n)` from `P(0)` and a step `P(k) → P(k+1)` that holds for *every* `k`; a step for a single `k`, or an open formula as the conclusion, is not induction. Q3 rests on the direction of the rule of consequence. Thinking of assertions as sets of states, a triple that holds from a set of starting states holds from any smaller set, and a triple that lands in a set of final states lands in any larger set. So preconditions may only be strengthened and postconditions only weakened, and each wrong option has a concrete counterexample.
+<Fold title="Answer">
 
-Q4 and Q5 are proof outlines. Both need auxiliary variables to talk about initial values, and both are built by applying the assignment rule backwards from the postcondition and closing the gap to the given precondition with Cons. Q5 adds a loop, and the invariant `y · x! = X! ∧ x ≥ 0` is found, not guessed, by tabulating iterations as in the Cambridge lectures: `y` is the part of the factorial already computed and `x!` the part that remains. With the invariant in hand, the three obligations of initialisation, preservation and exit are routine algebra, each worth a mark.
+`I ≡ s = i(i+1)/2 ∧ 0 ≤ i ≤ n`. Initialisation: `0 = 0·1/2`. Preservation: `s + (i+1) = i(i+1)/2 + (i+1) = (i+1)(i+2)/2`, and `i < n` gives `i + 1 ≤ n`. Exit: `i ≥ n ∧ i ≤ n ⇒ i = n`, so `s = n(n+1)/2`.
+
+</Fold>
+
+**Drill 3.** Is `{x > 0} x := x − 1 {x ≥ 0}` valid?
+
+<Fold title="Answer">
+
+Yes. The assignment rule gives `{x − 1 ≥ 0} x := x − 1 {x ≥ 0}`. Over the integers, `x > 0 ⇒ x ≥ 1 ⇒ x − 1 ≥ 0`, so Cons strengthens the precondition to `x > 0`.
+
+</Fold>
 
 ## Check your understanding
 

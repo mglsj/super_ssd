@@ -1,16 +1,12 @@
 ---
 title: "Variables, Types & Expressions"
-description: "How Python names refer to objects, how its type system checks operations at run time, and how expressions and statements are evaluated."
+description: "Names bound to objects, dynamic and strong typing, and how expressions and statements are evaluated."
 part: python
 order: 1
 ---
 import { Callout, Fold, Mermaid, Flashcards, Quiz } from '@/components/notes';
 
-Every later topic in this course, from <a href={`${import.meta.env.BASE_URL}lists/`}>lists</a> and <a href={`${import.meta.env.BASE_URL}functions/`}>functions</a> to the assertions of <a href={`${import.meta.env.BASE_URL}hoare-logic/`}>Hoare logic</a>, depends on having an accurate picture of what happens inside the machine when a line of Python runs. Python is a high-level language: it manages memory for us, so we never allocate or free storage by hand. That convenience has a price. If we carry over a picture of variables from a language like C, where a variable is a fixed box in memory holding a value, several of Python's behaviours look surprising. If instead we learn Python's own model, the same behaviours become predictable.
-
-This page builds that model. We begin with what a variable actually is in Python (a name bound to an object), and the three properties every object has. We then look at Python's type system, which answers two separate questions: *when* are types checked, and *are* values silently converted from one type to another? Finally we turn to the difference between expressions, which produce values, and statements, which change the state of the program. That last distinction explains the walrus operator `:=`, lambda expressions, and the way an `if` statement sequences computation, which is exactly the structure Hoare logic will later reason about.
-
-Python is described as both **imperative** and **functional**. Imperative programming descends from the Turing machine: a program is a sequence of commands that change a stored state, chiefly by assignment. Functional programming descends from the λ-calculus (lambda calculus), in which functions are values that can be built, passed around and applied. Python supports both styles, and this page meets each of them: assignment and `if` on the imperative side, lambda expressions on the functional side.
+Python is both **imperative** and **functional**. Imperative programming descends from the Turing machine: a program is a sequence of commands that change a stored state, chiefly by assignment. Functional programming descends from the λ-calculus, in which functions are values that can be built, passed around and applied. Python supports both: assignment and `if` on the imperative side, lambda expressions on the functional side.
 
 ## Names and objects
 
@@ -34,11 +30,6 @@ Writing `class = 1` does not fail when it runs; it is rejected as a `SyntaxError
 
 The central idea of the Python memory model is that a variable is **not a box that holds a value**. Every value Python works with, whether the integer `10`, the string `"hello"` or a list, lives in memory as an **object**. A variable is a **name** that refers to an object, rather like a luggage tag tied to a suitcase. Assignment does not copy anything into a box; it ties a tag to an object. We say that assignment **binds** the name to the object.
 
-Precisely, executing the assignment statement `x = E` happens in two steps:
-
-1. Evaluate the expression `E` on the right-hand side. The result is an object (possibly a new one, possibly an existing one).
-2. Bind the name `x` on the left-hand side to that object, in the current **namespace** (the table that maps names to objects in the current scope).
-
 Now consider three lines:
 
 ```python
@@ -51,6 +42,15 @@ print(x, y)
 ```text
 10 20
 ```
+
+Two consequences follow. First, **rebinding one name never changes another name**, because rebinding moves a tag and leaves every object as it was. Second, an object that no name (and no other object) refers to any longer can never be reached again, so Python reclaims its memory automatically. This is called **garbage collection**.
+
+<Fold title="Details: the two steps of assignment">
+
+Precisely, executing the assignment statement `x = E` happens in two steps:
+
+1. Evaluate the expression `E` on the right-hand side. The result is an object (possibly a new one, possibly an existing one).
+2. Bind the name `x` on the left-hand side to that object, in the current **namespace** (the table that maps names to objects in the current scope).
 
 The second line is the one that matters. Evaluating the right-hand side `x` yields the object that `x` refers to, and step 2 binds `y` to that same object. No second `10` is made. The third line does not change the object `10`; it moves the tag `y` to a different object. The name `x` is still tied to `10`, so `x` is unchanged.
 
@@ -65,7 +65,7 @@ The second line is the one that matters. Evaluating the right-hand side `x` yiel
   end
   S1 --> S2`} />
 
-Two consequences follow. First, **rebinding one name never changes another name**, because rebinding moves a tag and leaves every object as it was. Second, an object that no name (and no other object) refers to any longer can never be reached again, so Python reclaims its memory automatically. This is called **garbage collection**.
+</Fold>
 
 ### Identity, type and value
 
@@ -74,6 +74,16 @@ Every object has three properties.
 - Its **identity** is fixed when the object is created and never changes. In CPython (the standard implementation) it is the object's memory address. The built-in `id(obj)` returns it, and the operator `is` compares identities: `a is b` is true exactly when `a` and `b` refer to the same object.
 - Its **type** determines what operations the object supports, such as whether `+` means addition or concatenation. `type(obj)` returns it. The type belongs to the *object*, not to the name.
 - Its **value** is the data it represents, such as the number ten.
+
+<Callout type="note" title="Definition: mutable and immutable objects">
+
+An object is **mutable** if its value can change after it is created while its identity stays the same. Lists, dictionaries and sets are mutable. An object is **immutable** if its value can never change. Integers, floats, strings, tuples, booleans and `None` are immutable.
+
+</Callout>
+
+This definition explains why `y = 20` "does not change `x`" when the values are integers. There is simply no operation that changes the integer object `10` into something else. The only thing we can do with the name `y` is rebind it. With a mutable object the situation is different: if `x` and `y` both refer to the same list, then changing the list through one name (for example with `y.append(4)`) is visible through the other, because there is only one list. The <a href={`${import.meta.env.BASE_URL}lists/`}>lists</a> page explores this in detail, and it is the root of almost every aliasing surprise in Python.
+
+<Fold title="Details: watching identities with id">
 
 We can watch the binding happen by asking for identities:
 
@@ -95,13 +105,7 @@ False
 
 The actual numbers `id` returns differ from run to run, so it is the comparison that is informative.
 
-<Callout type="note" title="Definition: mutable and immutable objects">
-
-An object is **mutable** if its value can change after it is created while its identity stays the same. Lists, dictionaries and sets are mutable. An object is **immutable** if its value can never change. Integers, floats, strings, tuples, booleans and `None` are immutable.
-
-</Callout>
-
-This definition explains why `y = 20` "does not change `x`" when the values are integers. There is simply no operation that changes the integer object `10` into something else. The only thing we can do with the name `y` is rebind it. With a mutable object the situation is different: if `x` and `y` both refer to the same list, then changing the list through one name (for example with `y.append(4)`) is visible through the other, because there is only one list. The <a href={`${import.meta.env.BASE_URL}lists/`}>lists</a> page explores this in detail, and it is the root of almost every aliasing surprise in Python.
+</Fold>
 
 <Fold title="Equal values, separate objects">
 
@@ -143,7 +147,11 @@ print(type(x))
 <class 'str'>
 ```
 
+<Fold title="Details: trade-offs of dynamic typing">
+
 The advantage is flexibility: code is short, and a function can work on any object that supports the operations it uses. The disadvantage is that a type error is discovered only when the offending line actually runs. A mistake in a branch that the tests never exercise can sit unnoticed until that branch runs in use.
+
+</Fold>
 
 ### Strong typing: whether types mix silently
 
@@ -157,8 +165,6 @@ The second question is whether the language silently converts values to make an 
 TypeError: can only concatenate str (not "int") to str
 ```
 
-Python will not guess whether we meant string concatenation or numeric addition. If we want one of them we must say so, with `"5" + str(5)` (giving `"55"`) or `int("5") + 5` (giving `10`). The benefit is data integrity: a wrong type produces an error at the place where it occurs, instead of a wrong value that travels on through the program and causes a confusing failure somewhere else.
-
 The two questions give four combinations, and real languages occupy all of them:
 
 | | static (checked before running) | dynamic (checked while running) |
@@ -167,6 +173,12 @@ The two questions give four combinations, and real languages occupy all of them:
 | **weak** (silent conversion) | C | JavaScript |
 
 A common error is to treat "dynamic" and "weak" as synonyms. They answer different questions: dynamic typing is about *when* a type error is detected, strong typing is about *whether* it is an error at all.
+
+<Fold title="Details: explicit conversion and why it helps">
+
+Python will not guess whether we meant string concatenation or numeric addition. If we want one of them we must say so, with `"5" + str(5)` (giving `"55"`) or `int("5") + 5` (giving `10`). The benefit is data integrity: a wrong type produces an error at the place where it occurs, instead of a wrong value that travels on through the program and causes a confusing failure somewhere else.
+
+</Fold>
 
 ### Type hints
 
@@ -188,15 +200,19 @@ Hello, Abhishek
 Hello, 42
 ```
 
-The second call runs without complaint. The interpreter **ignores type hints at run time**: they are stored on the function, but nothing checks them. Here the f-string converts `42` to text, so the body works anyway. Hints are read by other programs: static analysis tools such as **mypy**, and IDEs, examine the program text before it runs and report the call `greet(count)` as a type error. In other words, type hints let us add a static check on top of a dynamically typed language, but only if we choose to run such a tool.
-
 <Callout type="warning" title="A common mistake">
 
 A call that violates a type hint is not a run-time error because of the hint. It fails at run time only if the body actually performs an operation that the argument's type does not support. `greet(42)` returns `'Hello, 42'`.
 
 </Callout>
 
+<Fold title="Details: who checks hints, and hints as specifications">
+
+The second call runs without complaint. The interpreter **ignores type hints at run time**: they are stored on the function, but nothing checks them. Here the f-string converts `42` to text, so the body works anyway. Hints are read by other programs: static analysis tools such as **mypy**, and IDEs, examine the program text before it runs and report the call `greet(count)` as a type error. In other words, type hints let us add a static check on top of a dynamically typed language, but only if we choose to run such a tool.
+
 Type hints are our first example of a **specification** written into a program: a statement of what a function expects and returns, separate from the code that does the work. The <a href={`${import.meta.env.BASE_URL}specifications/`}>specifications</a> page develops this idea much further, from docstrings and `assert` statements to the pre- and postconditions of Hoare logic. It is useful to think of the programmer as playing the role of a **validator**: someone who checks, before trusting the code, that what it does matches what it claims to do. Hints, assertions and tests are all tools for that role.
+
+</Fold>
 
 ## Expressions
 
@@ -226,6 +242,8 @@ The arithmetic operators are:
 
 Floor division rounds *down*, towards minus infinity, not towards zero, so `-7 // 2` is `-4` and correspondingly `-7 % 2` is `1`. The pair always satisfies `a == (a // b) * b + a % b`.
 
+<Fold title="Details: overloaded, comparison and logical operators">
+
 Some operators are **overloaded**: their meaning depends on the types of their operands. This is the dynamic typing of the previous section at work, because the choice is made at run time by looking at the objects:
 
 ```python
@@ -242,9 +260,9 @@ helloworld
 
 The comparison operators `==`, `!=`, `<`, `<=`, `>` and `>=` produce a `bool`, either `True` or `False`. The logical operators `and`, `or` and `not` combine them, so `5 > 3 and 2 < 4` is `True`. The operators `and` and `or` **short-circuit**: they evaluate their right operand only if the left one has not already decided the answer. In `xs and xs[0] > 0`, if `xs` is an empty list (which counts as false), Python never evaluates `xs[0]`, so no `IndexError` occurs. This is a matter of correctness, not only of speed.
 
-### Lines and the expression hierarchy
+</Fold>
 
-Python's grammar arranges expressions in a hierarchy, from the outermost (loosest) form to the innermost: **lambda expressions** contain **assignment expressions** (`:=`), which contain expressions built with **operators**, which are built from **primary** (atomic) expressions such as names, literals, calls and indexing. Knowing this order tells us, for instance, that a lambda body may contain `:=` and operators, but a bare `:=` cannot appear everywhere an operator expression can.
+### Lines and the expression hierarchy
 
 A **logical line** is one complete statement as Python sees it; a **physical line** is a line of text in the file. One logical line may span several physical lines, either inside brackets or after a trailing backslash, and several logical lines may share one physical line when separated by semicolons:
 
@@ -253,6 +271,12 @@ total = (1 + 2 + 3 +
          4 + 5 + 6)        # one logical line, two physical lines
 x = 5; y = 10; z = x + y   # three logical lines, one physical line
 ```
+
+<Fold title="Details: the expression hierarchy">
+
+Python's grammar arranges expressions in a hierarchy, from the outermost (loosest) form to the innermost: **lambda expressions** contain **assignment expressions** (`:=`), which contain expressions built with **operators**, which are built from **primary** (atomic) expressions such as names, literals, calls and indexing. Knowing this order tells us, for instance, that a lambda body may contain `:=` and operators, but a bare `:=` cannot appear everywhere an operator expression can.
+
+</Fold>
 
 ## Assignment statements and assignment expressions
 
@@ -283,7 +307,11 @@ print(x = 5)         # TypeError
 result = (x = 5)     # SyntaxError
 ```
 
-The last two fail for different reasons, and the difference is instructive. Inside a call's parentheses, `name=value` already has a meaning: it is a **keyword argument**. So `print(x = 5)` parses correctly as "call `print` with a keyword argument named `x`", and fails only when it runs, with `TypeError: 'x' is an invalid keyword argument for print()`. In `result = (x = 5)`, by contrast, the parentheses demand an expression and `x = 5` is not one. The parser rejects it, so it is a `SyntaxError`, detected before *any* line of the program is executed. In a notebook, a cell containing that line does not run at all, even its earlier lines.
+<Fold title="Details: why one is a TypeError and the other a SyntaxError">
+
+The last two fail for different reasons, and the difference is instructive. Inside a call's parentheses, `name=value` already has a meaning: it is a **keyword argument**. So `print(x = 5)` parses correctly as "call `print` with a keyword argument named `x`", and fails only when it runs, with `TypeError: 'x' is an invalid keyword argument for print()`. In `result = (x = 5)`, by contrast, the parentheses demand an expression and `x = 5` is not one. The parser rejects it, so it is a `SyntaxError`, detected before *any* line of the program is executed. Code containing that line does not run at all, even its earlier lines.
+
+</Fold>
 
 ### Other assignment forms
 
@@ -296,7 +324,9 @@ x, y = 1, 2          # tuple unpacking
 x, y = y, x          # swap: the right side is built before any binding
 ```
 
-In unpacking, the right-hand side is evaluated *completely*, left to right, before any name on the left is bound. That rule is what makes the one-line swap work, and it settles the following puzzle from the lecture:
+In unpacking, the right-hand side is evaluated *completely*, left to right, before any name on the left is bound. That rule is what makes the one-line swap work, and it settles the following puzzle:
+
+<Fold title="Worked puzzle: a walrus inside unpacking">
 
 ```python
 x, y = 10, 10
@@ -309,6 +339,8 @@ Value of x = 11 and y = 11
 ```
 
 To build the right-hand tuple, Python evaluates its first item, `(y := y + 1)`. That rebinds `y` to `11` and yields `11`. Then it evaluates the second item, `y`, which now refers to `11`. The tuple is `(11, 11)`, and only now are `x` and `y` bound to its two items. Someone expecting `y` to be read before the walrus runs would predict `11, 10`; the left-to-right rule says otherwise.
+
+</Fold>
 
 ## Lambda expressions
 
@@ -330,6 +362,10 @@ print(list(map(lambda x: x + 5, [1, 2, 3])))      # [6, 7, 8]
 print(list(filter(lambda x: x % 2, range(10))))  # [1, 3, 5, 7, 9]
 ```
 
+Since the body must be an expression, a lambda cannot contain statements: `lambda x: y = x` is a `SyntaxError`, and loops are impossible. This limitation is deliberate. Lambdas suit quick, one-off operations, such as the `key` for a sort or the function given to `map`. Anything reused, anything with more than one step, and anything that deserves a docstring should be written with `def`.
+
+<Fold title="Details: map, filter and function factories">
+
 The last two lines use **higher-order functions**, functions that take another function as an argument. `map(f, xs)` applies `f` to every item of `xs`; `filter(f, xs)` keeps the items for which `f` returns a true value. Here `x % 2` is `1` (true) for odd numbers and `0` (false) for even ones, so the odd numbers remain. Both return lazy iterators, which is why we wrap them in `list(...)` to see the results; the <a href={`${import.meta.env.BASE_URL}lists/`}>lists</a> page explains iterators.
 
 A lambda can also *return* a function. The following **function factory** takes a factor and builds a function that multiplies by it:
@@ -346,7 +382,7 @@ print(double(5), make_mul(10)(5))
 
 The inner lambda remembers the value of `k` from the call that created it; this is called a closure, and the <a href={`${import.meta.env.BASE_URL}functions/`}>functions</a> page explains how it works.
 
-Since the body must be an expression, a lambda cannot contain statements: `lambda x: y = x` is a `SyntaxError`, and loops are impossible. This limitation is deliberate. Lambdas suit quick, one-off operations, such as the `key` for a sort or the function given to `map`. Anything reused, anything with more than one step, and anything that deserves a docstring should be written with `def`.
+</Fold>
 
 ## Statements and control flow
 
@@ -379,6 +415,8 @@ else:
     activity = "read"
 ```
 
+<Fold title="Details: tracing the example, and reasoning about the join">
+
 With `temperature = 30`, the first condition is true, so the program prints `It's hot` and binds `activity` to `"swim"`. The `elif` condition `temperature > 15` is also true, but it is never evaluated, because only the first true branch runs. That is the point of `elif` over a second independent `if`: the branches are mutually exclusive by construction, and the order of the tests matters. After the statement, whichever branch ran, `activity` is bound to one of three strings, which is the kind of fact Hoare logic's conditional rule lets us prove.
 
 <Mermaid code={`flowchart TD
@@ -392,6 +430,8 @@ With `temperature = 30`, the first condition is true, so the program prints `It'
   el --> j`} />
 
 The diagram shows why reasoning about an `if` needs care: control flow splits, and then joins again. After the join we no longer know which path was taken, so anything we claim to be true afterwards must hold on every path. On the <a href={`${import.meta.env.BASE_URL}hoare-logic/`}>Hoare logic</a> page this becomes the **If rule**, which asks us to prove each branch separately, under the assumption that its condition was true (or false), and to reach the same postcondition on both.
+
+</Fold>
 
 ## Summary
 

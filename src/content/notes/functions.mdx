@@ -1,14 +1,12 @@
 ---
 title: "Functions as Abstraction"
-description: "How Python functions are defined and called, how arguments are passed as shared references, when default values are evaluated, and how docstrings and first-class functions support abstraction."
+description: "Defining and calling functions, argument passing by reference, default values, docstrings and first-class functions."
 part: python
 order: 3
 ---
 import { Callout, Fold, Mermaid, Flashcards, Quiz } from '@/components/notes';
 
-A function packages a computation behind a name and a list of parameters, so that the rest of the program can use it without repeating, or even reading, its body. That makes functions the basic unit of abstraction in Python, and also the basic unit of specification: when we later write pre- and postconditions on the <a href={`${import.meta.env.BASE_URL}specifications/`}>specifications</a> page and prove them with <a href={`${import.meta.env.BASE_URL}hoare-logic/`}>Hoare logic</a>, it is almost always a function whose behaviour we are describing.
-
-This page starts with why functions are worth having, then looks at how they are defined and called. Most of the page is about the machine model behind a call, which builds directly on the names-and-objects picture from <a href={`${import.meta.env.BASE_URL}python-basics/`}>the first page</a> and the reference semantics of <a href={`${import.meta.env.BASE_URL}lists/`}>lists</a>. That model explains why a function can change a caller's list but not a caller's integer, and why a list used as a default value seems to remember earlier calls. We then cover return values, docstrings as contracts, and finally the fact that functions are themselves objects, which lets us store them, pass them to other functions, and build new functions at run time.
+A function packages a computation behind a name and a list of parameters, so the rest of the program can use it without repeating, or even reading, its body. Functions are the basic unit of abstraction in Python, and also the basic unit of specification: pre- and postconditions are almost always written for a function.
 
 ## Why functions
 
@@ -28,7 +26,9 @@ room2_paint = room2_area * 1.75
 room3_paint = room3_area * 1.75
 ```
 
-Each formula appears three times. If the cost rate changes, or one copy contains a typing error, we must find and fix every copy, and each copy is one more place for a bug to hide. Functions address this in three related ways.
+Each formula appears three times. If the cost rate changes, or one copy contains a typing error, we must find and fix every copy, and each copy is one more place for a bug to hide. Functions address this in three related ways: reusability, decomposition and abstraction.
+
+<Fold title="Details: reusability, decomposition, abstraction">
 
 **Reusability.** A computation written once as a function can be called from anywhere. It is debugged and tested once, and a later correction is made in one place.
 
@@ -45,6 +45,8 @@ def calculate_material_cost(area, cost_per_sqft):
 **Decomposition.** A large problem is easier to solve, read and test when it is divided into smaller problems, each handled by a function with one clear responsibility. Computing a student's final grade, for example, splits naturally into `calculate_average(scores)`, `apply_weighting(average, weight)`, `calculate_final_grade(test_avg, hw_avg, project_avg)` and `determine_letter_grade(numeric_grade)`. Each piece can be understood, tested and changed on its own, the boundaries between them are explicit, and a failure in one is easier to locate.
 
 **Abstraction.** A caller of `calculate_final_grade(test_scores, homework_scores, project_score)` needs to know *what* it computes, not *how*. The body may average, weight and convert in any way, and may later be rewritten for speed, without any caller changing. This works only if there is a clear statement of what the function requires and what it delivers, which we call its **contract**. The contract is the subject of the docstrings section below, and the reason functions connect so directly to the reasoning half of the course.
+
+</Fold>
 
 ## Defining and calling functions
 
@@ -84,7 +86,7 @@ A green rectangle 12x8 (area: 96)
 A orange rectangle 10x7 (area: 70)
 ```
 
-With positional arguments, order matters: the first two calls describe different rectangles. Keyword arguments make a call self-documenting and protect against mixing up parameters of the same type. The two styles may be mixed, but **positional arguments must come before keyword arguments**. Otherwise Python could not tell which parameter a later positional argument was meant for:
+The two styles may be mixed, but **positional arguments must come before keyword arguments**:
 
 ```python
 create_rectangle(length=10, 5, "blue")
@@ -94,7 +96,13 @@ create_rectangle(length=10, 5, "blue")
 SyntaxError: positional argument follows keyword argument
 ```
 
+<Fold title="Details: order, and errors at call time">
+
+With positional arguments, order matters: the first two calls describe different rectangles. Keyword arguments make a call self-documenting and protect against mixing up parameters of the same type. Positional arguments come first because otherwise Python could not tell which parameter a later positional argument was meant for.
+
 This is a syntax error, so it is reported before the program runs at all. Two related mistakes are detected only when the call runs. Supplying the same parameter twice, as in `create_rectangle(10, length=10, color="red")`, raises `TypeError: create_rectangle() got multiple values for argument 'length'`. Leaving a parameter out raises a `TypeError` saying that a required positional argument is missing.
+
+</Fold>
 
 ## How arguments are passed
 
@@ -164,7 +172,11 @@ After function: ['Alice', 'Bob', 'Charlie']
 
 Here `roster` and `class_students` are two names for one list, and `append` changes that list. Nothing is returned, and yet the caller's data has changed. A change of this kind, one that is visible outside the function other than through its return value, is called a **side effect**. Side effects are sometimes exactly what we want, but they must be documented, because a caller who does not expect them will be surprised.
 
+<Fold title="Details: rebinding versus += on a list">
+
 The distinction is sharp even within one type. For a list parameter `xs`, the statement `xs = xs + [4]` rebinds the local name to a new list and the caller sees nothing, while `xs += [4]` extends the existing list in place (as described on the lists page) and the caller sees the change. Both look like "add 4 to `xs`".
+
+</Fold>
 
 ### Protecting the caller's data
 
@@ -217,11 +229,27 @@ One Medium Latte coffee with 2 sugars
 One Large Espresso coffee with 1 sugars
 ```
 
-Defaults make common calls short while keeping full control available: `bake_cake("Chocolate")` might use sensible values for temperature, time and frosting, while `bake_cake("Carrot", temperature=325, minutes=60, frosting=False)` overrides all of them. Parameters with defaults must come after those without, in the definition, for the same reason that positional arguments must come first in a call.
+Parameters with defaults must come after those without, in the definition, for the same reason that positional arguments must come first in a call. Defaults make common calls short while keeping full control available: `bake_cake("Chocolate")` might use sensible values for temperature, time and frosting, while `bake_cake("Carrot", temperature=325, minutes=60, frosting=False)` overrides all of them.
 
 ### Backward compatibility
 
-Defaults have a second, less obvious purpose. Suppose a function is already called in many places:
+Defaults have a second, less obvious purpose. Existing code keeps working after a function is extended, if the new parameter gets a default that reproduces the old behaviour:
+
+```python
+def process_data(data, to_lower=True):
+    if to_lower:
+        return data.lower()
+    return data
+
+process_data("HELLO")          # 'hello': existing code still works
+process_data("HELLO", False)   # 'HELLO': the new behaviour is optional
+```
+
+This property is called **backward compatibility**. It matters most for libraries used by many people, where changing every caller is impossible, and default arguments are the standard way to evolve a function's interface safely.
+
+<Fold title="Details: how a plain parameter breaks callers">
+
+Suppose a function is already called in many places:
 
 ```python
 def process_data(data):
@@ -239,19 +267,9 @@ def process_data(data, to_lower):
     return data
 ```
 
-then every existing call fails with `TypeError: process_data() missing 1 required positional argument: 'to_lower'`. Giving the new parameter a default that reproduces the old behaviour avoids this:
+then every existing call fails with `TypeError: process_data() missing 1 required positional argument: 'to_lower'`. Giving the new parameter a default, as above, avoids this.
 
-```python
-def process_data(data, to_lower=True):
-    if to_lower:
-        return data.lower()
-    return data
-
-process_data("HELLO")          # 'hello': existing code still works
-process_data("HELLO", False)   # 'HELLO': the new behaviour is optional
-```
-
-This property, that existing code keeps working after a function is extended, is called **backward compatibility**. It matters most for libraries used by many people, where changing every caller is impossible, and default arguments are the standard way to evolve a function's interface safely.
+</Fold>
 
 ### When defaults are evaluated
 
@@ -263,8 +281,6 @@ def func(arg=EXPRESSION):
 ```
 
 Python evaluates `EXPRESSION` **once, when the `def` statement is executed**, and stores the resulting object inside the function object (it is visible as `func.__defaults__`). Every call that omits `arg` then binds `arg` to *that same stored object*. The expression is not evaluated again on each call.
-
-For an immutable default such as `0`, `"Medium"` or `None`, this makes no difference, because the stored object can never change. For a mutable default it makes a great deal of difference:
 
 ```python
 def add_to_history_bad(item, history=[]):
@@ -284,10 +300,6 @@ print(add_to_history_bad.__defaults__)
 (['first call', 'second call', 'third call'],)
 ```
 
-There is exactly one default list, created when `def` ran. The first call binds `history` to it and appends to it. The second call binds `history` to the *same* list, which already holds `'first call'`, and appends again. State leaks from one call into the next, and the last line shows the accumulated list sitting in the function object itself. Worse, all three returned values are the same list object, so a caller who kept the first result will find that it too has grown.
-
-The standard fix is to use `None` as a **sentinel**, a special value meaning "no argument was given", and to create the mutable object inside the body, where it is evaluated on every call:
-
 ```python
 def add_to_history_good(item, history=None):
     if history is None:
@@ -299,13 +311,23 @@ print(add_to_history_good("first call"))    # ['first call']
 print(add_to_history_good("second call"))   # ['second call']
 ```
 
-The test is written `history is None` rather than `history == None` or `not history`. The identity test is exact. `not history` would also be true for an empty list that the caller deliberately passed in, and the function would then silently replace the caller's list with a new one.
-
 <Callout type="important" title="Exam point">
 
 Default values are evaluated once, when `def` runs, and shared by every call. A mutable default (`[]`, `{}`, `set()`) therefore accumulates state across calls. Immutable defaults (numbers, strings, tuples, `None`) are safe. The fix is a `None` default followed by `if x is None: x = []` in the body.
 
 </Callout>
+
+<Fold title="Details: why the list accumulates, and the is None test">
+
+For an immutable default such as `0`, `"Medium"` or `None`, this makes no difference, because the stored object can never change. For a mutable default it makes a great deal of difference, as `add_to_history_bad` shows.
+
+There is exactly one default list, created when `def` ran. The first call binds `history` to it and appends to it. The second call binds `history` to the *same* list, which already holds `'first call'`, and appends again. State leaks from one call into the next, and the last line shows the accumulated list sitting in the function object itself. Worse, all three returned values are the same list object, so a caller who kept the first result will find that it too has grown.
+
+The standard fix, `add_to_history_good`, is to use `None` as a **sentinel**, a special value meaning "no argument was given", and to create the mutable object inside the body, where it is evaluated on every call.
+
+The test is written `history is None` rather than `history == None` or `not history`. The identity test is exact. `not history` would also be true for an empty list that the caller deliberately passed in, and the function would then silently replace the caller's list with a new one.
+
+</Fold>
 
 ## Return values
 
@@ -357,7 +379,11 @@ print(calculate_grade(-5), calculate_grade(150), calculate_grade(85))
 Invalid average Invalid average B
 ```
 
-The first test is an **early return** (also called a *guard clause*): it rejects invalid input at the top, so the main logic below may assume that `average` lies between 0 and 100. In the language of the reasoning pages, the guard establishes a precondition for the rest of the body. The same idea appears in
+The first test is an **early return** (also called a *guard clause*): it rejects invalid input at the top, so the main logic below may assume that `average` lies between 0 and 100.
+
+<Fold title="More examples">
+
+In the language of the reasoning pages, the guard establishes a precondition for the rest of the body. The same idea appears in
 
 ```python
 def safe_divide(a, b):
@@ -365,6 +391,8 @@ def safe_divide(a, b):
         return None      # guard: the division below can assume b != 0
     return a / b
 ```
+
+</Fold>
 
 ### Returning several values
 
@@ -420,17 +448,21 @@ A docstring is a **contract** between the person who writes a function and the p
 - **edge cases and errors**: what happens for an empty list, or which exceptions are raised for invalid input;
 - an **example** of a call and its result.
 
-A docstring such as `"""Process some data."""` fails this test: it tells the caller nothing they could not guess from the name. Compare one that states the edge case: `find_highest_score(scores)` "returns the highest score, or None if the list is empty".
-
 The parts of a contract have exact counterparts in the reasoning half of the course. The restrictions on the parameters are a **precondition**: what the caller must guarantee. The description of the return value is a **postcondition**: what the function guarantees in return, provided the precondition held. For `area`, writing `r` for the returned value, the contract is the Hoare triple
 
 ```text
 {length ≥ 0 ∧ width ≥ 0}  r = area(length, width)  {r = length · width}
 ```
 
-(`∧` means "and"). A docstring states this informally, for human readers. The <a href={`${import.meta.env.BASE_URL}specifications/`}>specifications</a> page makes it executable, with `assert` statements that check the precondition on entry and the postcondition before returning, and the <a href={`${import.meta.env.BASE_URL}hoare-logic/`}>Hoare logic</a> page proves it for all inputs. The example line `>>> area(3, 4)` followed by `12` is itself checkable: the standard `doctest` module runs such examples and reports any whose output differs.
+<Fold title="Details: good and bad docstrings, and where contracts lead">
+
+A docstring such as `"""Process some data."""` fails this test: it tells the caller nothing they could not guess from the name. Compare one that states the edge case: `find_highest_score(scores)` "returns the highest score, or None if the list is empty".
+
+In the triple, `∧` means "and". A docstring states this informally, for human readers. The <a href={`${import.meta.env.BASE_URL}specifications/`}>specifications</a> page makes it executable, with `assert` statements that check the precondition on entry and the postcondition before returning, and the <a href={`${import.meta.env.BASE_URL}hoare-logic/`}>Hoare logic</a> page proves it for all inputs. The example line `>>> area(3, 4)` followed by `12` is itself checkable: the standard `doctest` module runs such examples and reports any whose output differs.
 
 The contract also explains the value of abstraction described at the start. A caller relies only on the contract, so the implementation may change freely as long as it still satisfies the contract. And when something goes wrong, the contract tells us whose fault it is: if the precondition was violated, the caller is at fault; if the precondition held but the postcondition did not, the function is.
+
+</Fold>
 
 ## Functions as first-class objects
 
@@ -480,7 +512,11 @@ ops = {"mul": lambda a, b: a * b}
 print(ops["mul"](3, 4))                         # 12
 ```
 
+<Fold title="More examples">
+
 The same pattern selects a pricing rule: with `discount_strategies = {'standard': ..., 'premium': ..., 'clearance': ...}` holding functions that multiply by 0.9, 0.8 and 0.5, the expression `discount_strategies['premium'](100)` gives `80.0`. Adding a new strategy means adding one dictionary entry, with no change to the code that uses it.
+
+</Fold>
 
 ### Higher-order functions
 
@@ -513,7 +549,11 @@ print(sorted(students, key=lambda student: student[1]))
 # [('Charlie', 78), ('Alice', 85), ('Bob', 92)]
 ```
 
+<Fold title="Details: when a lambda is too complex">
+
 As on the first page, lambdas suit short one-off functions like these. A lambda such as `lambda x: (x**2 + 2*x + 1) if x > 0 else (x**3 - x**2)` is already too complex: it should be a named function with a docstring.
+
+</Fold>
 
 ## Function factories and closures
 
@@ -535,15 +575,19 @@ print(double(5), triple(5), times_ten(5))
 10 15 50
 ```
 
-Each call to `create_multiplier` executes the inner `def`, creating a new function object, and returns it. But there is a puzzle. When `triple(5)` runs, the call to `create_multiplier(3)` has long since returned, and its local namespace, which held `factor`, would normally be gone. How does `multiplier` still find `factor = 3`?
-
-The answer is that an inner function that uses a variable of its enclosing function keeps that variable alive. Python attaches to the inner function object a reference to the variable (stored in a **cell**), so it survives after the outer call ends. A function together with the variables it captured from its enclosing scope is called a **closure**. Each call to the factory creates a new cell, which is why `double` and `triple` each remember their own `factor`. We can even inspect it: `triple.__closure__[0].cell_contents` is `3`.
+A function together with the variables it captured from its enclosing scope is called a **closure**. Each call to the factory creates a new cell, which is why `double` and `triple` each remember their own `factor`.
 
 <Mermaid code={`flowchart LR
   CM["call create_multiplier(3)"] --> M["new function object multiplier"]
   M --> Cell["captured cell: factor = 3"]
   T(["triple"]) --> M
   M -->|"called with 5"| R["5 * 3 = 15"]`} />
+
+<Fold title="Details: how the closure keeps factor alive">
+
+Each call to `create_multiplier` executes the inner `def`, creating a new function object, and returns it. But there is a puzzle. When `triple(5)` runs, the call to `create_multiplier(3)` has long since returned, and its local namespace, which held `factor`, would normally be gone. How does `multiplier` still find `factor = 3`?
+
+The answer is that an inner function that uses a variable of its enclosing function keeps that variable alive. Python attaches to the inner function object a reference to the variable (stored in a **cell**), so it survives after the outer call ends. We can even inspect it: `triple.__closure__[0].cell_contents` is `3`.
 
 Because a lambda is just an anonymous function, the factory can be written more briefly, and even the factory itself can be a lambda:
 
@@ -554,6 +598,8 @@ def create_multiplier1(factor):
 create_multiplier2 = lambda factor: (lambda x: x * factor)
 print(create_multiplier1(3)(5), create_multiplier2(10)(5))    # 15 50
 ```
+
+</Fold>
 
 <Fold title="Late binding in closures">
 
@@ -568,7 +614,7 @@ print([f(10) for f in fs])
 [20, 20, 20]
 ```
 
-All three lambdas refer to the same variable `i`, and by the time they are called the loop has finished with `i` equal to 2. A factory such as `create_multiplier` avoids this, because each call creates a separate `factor`. Another fix uses the rule about defaults from earlier on this page: `lambda x, i=i: x * i` evaluates the default `i` when the lambda is *created*, so each function stores its own value, and the result is `[0, 10, 20]`.
+All three lambdas refer to the same variable `i`, and by the time they are called the loop has finished with `i` equal to 2. A factory such as `create_multiplier` avoids this, because each call creates a separate `factor`. Another fix uses the rule that defaults are evaluated once: `lambda x, i=i: x * i` evaluates the default `i` when the lambda is *created*, so each function stores its own value, and the result is `[0, 10, 20]`.
 
 </Fold>
 

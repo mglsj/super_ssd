@@ -1,14 +1,12 @@
 ---
 title: "Hoare Logic"
-description: "How Hoare triples specify what a program does, and how a handful of inference rules let us prove a program meets its specification."
+description: "Hoare triples, the inference rules for each statement, and how to prove a program meets its specification."
 part: reasoning
 order: 3
 ---
 import { Callout, Fold, Rules, Rule, Proof, Mermaid, Flashcards, Quiz } from '@/components/notes';
 
-On the <a href={`${import.meta.env.BASE_URL}specifications/`}>specifications</a> and <a href={`${import.meta.env.BASE_URL}loop-invariants/`}>loop invariants</a> pages we wrote down what a function should do with `assert` statements, and checked those assertions by running the code. Running code can only ever check the inputs we happen to try. **Hoare logic** goes one step further: it is a formal system for *proving* that a program meets its specification for every possible input. It was introduced by Tony Hoare in 1969, building on earlier work by Robert Floyd, and it is still an active research area: it underlies verification tools such as Why3, Boogie and Facebook's Infer, and the proof of the seL4 operating-system kernel.
-
-The central idea is simple. We describe a program by what must be true of the program's variables before it runs, and what will then be true after it finishes. A small set of rules, one for each kind of statement, tells us how such descriptions combine. A proof that a program is correct is then a chain of rule applications, much like a proof in algebra. This page builds that system up piece by piece: first what a specification means, then each rule and why it is the right one, and finally how the rules are used together on real loops.
+Running code can only check the inputs we happen to try. **Hoare logic** is a formal system for *proving* that a program meets its specification for every possible input. We describe a program by what must be true of its variables before it runs and what will be true after it finishes, and a small set of rules, one for each kind of statement, tells us how such descriptions combine. A proof of correctness is a chain of rule applications, much like a proof in algebra.
 
 ## Specifications as Hoare triples
 
@@ -26,17 +24,21 @@ Here `C` is a piece of program (a *command*: one statement or a sequence of stat
 
 says that if `x` holds 1 and we run `x = x + 1`, then afterwards `x` holds 2.
 
-The assertions are built from ordinary boolean expressions over the program's variables, such as `x > 0` or `y = x + 1`, combined with the usual logical connectives. We write `∧` for "and", `∨` for "or", `¬` for "not", `⇒` for "implies", and `∀` and `∃` for "for all" and "there exists". For instance `x = y + 1 ∧ y > 0` describes every state in which `y` is positive and `x` is one more than `y`. An assertion therefore picks out a *set of states*: all the states that make it true.
-
 <Callout type="note" title="Definition: what a triple means">
 
 The triple `{P} C {Q}` holds if, whenever `C` is run in a state that satisfies `P`, **and that run terminates**, the final state satisfies `Q`.
 
 </Callout>
 
+It helps to read a triple as a contract between the code and whoever calls it. The caller is responsible for establishing `P` before running `C`. In return, `C` guarantees `Q` afterwards. If the caller breaks their side of the contract, the code owes them nothing.
+
+<Fold title="Details: assertions, and what the definition promises">
+
+The assertions are built from ordinary boolean expressions over the program's variables, such as `x > 0` or `y = x + 1`, combined with the usual logical connectives. We write `∧` for "and", `∨` for "or", `¬` for "not", `⇒` for "implies", and `∀` and `∃` for "for all" and "there exists". For instance `x = y + 1 ∧ y > 0` describes every state in which `y` is positive and `x` is one more than `y`. An assertion therefore picks out a *set of states*: all the states that make it true.
+
 The definition is a promise with conditions attached. It says nothing about runs that start in a state where `P` is false, and nothing about runs that never finish. So `{x = 1} x = x + 1 {x = 2}` holds, while `{x = 1} x = x + 1 {x = 3}` does not, because the only possible final state has `x = 2`.
 
-It helps to read a triple as a contract between the code and whoever calls it. The caller is responsible for establishing `P` before running `C`. In return, `C` guarantees `Q` afterwards. If the caller breaks their side of the contract, the code owes them nothing.
+</Fold>
 
 ### Partial correctness
 
@@ -49,7 +51,13 @@ while x > 0:
 # {x = 0}
 ```
 
-This triple holds. Starting from `x = 1`, the loop keeps increasing `x` and never stops, so there is no final state at all, and a promise about final states is trivially kept. Partial correctness separates two questions: *if* the program finishes, is the answer right? And *does* it finish? Hoare triples answer only the first. A **total correctness** triple, often written `[P] C [Q]`, additionally requires that `C` terminates from every state satisfying `P`. Termination is usually proved separately, by finding a quantity (a *variant*) that strictly decreases on every loop iteration and cannot decrease forever. In this course, and in the exam, triples mean partial correctness unless stated otherwise.
+This triple holds. Starting from `x = 1`, the loop keeps increasing `x` and never stops, so there is no final state at all, and a promise about final states is trivially kept. A **total correctness** triple, often written `[P] C [Q]`, additionally requires that `C` terminates from every state satisfying `P`. In this course, and in the exam, triples mean partial correctness unless stated otherwise.
+
+<Fold title="Details">
+
+Partial correctness separates two questions: *if* the program finishes, is the answer right? And *does* it finish? Hoare triples answer only the first. Termination is usually proved separately, by finding a quantity (a *variant*) that strictly decreases on every loop iteration and cannot decrease forever.
+
+</Fold>
 
 ### Corner cases
 
@@ -63,6 +71,20 @@ A useful rule of thumb follows: a specification gets *stronger* (more informativ
 
 ## Auxiliary variables
 
+We need a way for the postcondition to refer to the *initial* values. Hoare logic does this with **auxiliary variables** (also called *ghost* or *logical* variables). These are names that may appear in assertions but never in the program, so the program cannot change them. We conventionally write them as capital letters or with a subscript. The precondition ties them to the starting values. A program `C` that stores the larger of `x` and `y` in `z` is specified by
+
+```text
+{x = X ∧ y = Y}  C  {(X ≥ Y ∧ z = X) ∨ (Y ≥ X ∧ z = Y)}
+```
+
+In the same style, a correct swap is specified by
+
+```text
+{x = X ∧ y = Y}  C  {x = Y ∧ y = X}
+```
+
+<Fold title="Details: why a naive specification fails, and more examples">
+
 Suppose we want to specify a program `C` that stores the larger of `x` and `y` in `z`. A first attempt is
 
 ```text
@@ -71,17 +93,7 @@ Suppose we want to specify a program `C` that stores the larger of `x` and `y` i
 
 Is this a good specification? No. Take `C` to be `x = 0; y = 0; z = 0`. That program satisfies the triple, because after it runs `x ≥ y` and `z = x` both hold, yet it does not compute a maximum at all. The postcondition talks about the *final* values of `x` and `y`, and `C` is free to change them.
 
-We need a way for the postcondition to refer to the *initial* values. Hoare logic does this with **auxiliary variables** (also called *ghost* or *logical* variables). These are names that may appear in assertions but never in the program, so the program cannot change them. We conventionally write them as capital letters or with a subscript. The precondition ties them to the starting values:
-
-```text
-{x = X ∧ y = Y}  C  {(X ≥ Y ∧ z = X) ∨ (Y ≥ X ∧ z = Y)}
-```
-
-Now `z` must equal the larger of the *original* values. This still allows `C` to modify `x` and `y` along the way. If that is not acceptable, we say so explicitly by adding `x = X ∧ y = Y` to the postcondition as well. In the same style, a correct swap is specified by
-
-```text
-{x = X ∧ y = Y}  C  {x = Y ∧ y = X}
-```
+With auxiliary variables, `z` must equal the larger of the *original* values. This still allows `C` to modify `x` and `y` along the way. If that is not acceptable, we say so explicitly by adding `x = X ∧ y = Y` to the postcondition as well.
 
 The Python version of this idea is the `x_orig, y_orig = x, y` line from the specifications page: a copy of the initial values kept only so that the final `assert` can mention them. Auxiliary variables also let us state more interesting specifications compactly. Integer division of `x` by `y` into quotient `q` and remainder `r` is
 
@@ -91,11 +103,11 @@ The Python version of this idea is the `x_orig, y_orig = x, y` line from the spe
 
 which says exactly what division means, without saying anything about how `C` computes it.
 
+</Fold>
+
 ## Inference rules and proofs
 
-Knowing what a triple means is not yet enough. To check `{P} C {Q}` directly against the definition we would have to consider every starting state, which is what testing tries and fails to do. Hoare logic instead gives a **proof system**: a set of **inference rules** from which true triples can be *derived* by pure reasoning about the program text.
-
-An inference rule is written as a fraction:
+Hoare logic gives a **proof system**: a set of **inference rules** from which true triples can be *derived* by pure reasoning about the program text. An inference rule is written as a fraction:
 
 ```text
 premise₁    premise₂    …
@@ -103,9 +115,7 @@ premise₁    premise₂    …
        conclusion
 ```
 
-and is read "if every premise above the line has been proved, then the conclusion below the line may be concluded". A rule with no premises is an **axiom**: its conclusion can be used anywhere. The letters `P`, `Q`, `C`, `E` in a rule are placeholders that may be replaced by any assertion, command or expression, so one rule covers infinitely many cases. A **proof** of a triple is a tree of rule applications whose root is the triple we want and whose leaves are axioms or facts of ordinary logic.
-
-The rules are listed below, and each is explained in its own section. Python's `pass` plays the role of the `skip` command in the lectures, and `x = E` is assignment.
+and is read "if every premise above the line has been proved, then the conclusion below the line may be concluded". The rules are listed below, and each is explained in its own section. In Python, `pass` is the do-nothing statement and `x = E` is assignment.
 
 <Rules>
   <Rule name="Skip" conclusion="{P} pass {P}" note="axiom" />
@@ -117,6 +127,14 @@ The rules are listed below, and each is explained in its own section. Python's `
 </Rules>
 
 The rules are **sound**: every triple they derive really holds in the sense of the definition above. That is what makes a derivation a proof rather than just a calculation.
+
+<Fold title="Details: why a proof system, axioms and proof trees">
+
+Knowing what a triple means is not yet enough. To check `{P} C {Q}` directly against the definition we would have to consider every starting state, which is what testing tries and fails to do.
+
+A rule with no premises is an **axiom**: its conclusion can be used anywhere. The letters `P`, `Q`, `C`, `E` in a rule are placeholders that may be replaced by any assertion, command or expression, so one rule covers infinitely many cases. A **proof** of a triple is a tree of rule applications whose root is the triple we want and whose leaves are axioms or facts of ordinary logic.
+
+</Fold>
 
 ## The skip rule
 
@@ -136,11 +154,21 @@ The notation `P[E/x]` means "the assertion `P` with every occurrence of the vari
 {x + 1 = 2}  x = x + 1  {x = 2}
 ```
 
+The rule is applied *backwards*, from the postcondition to the precondition. Given what we want to hold after the statement, it computes what must hold before.
+
+<Callout type="warning" title="A common mistake">
+
+Do not reason forwards by writing something like `{x = x + 1}` after `x = x + 1`. In an assertion, `x` means the current value of `x`, so `x = x + 1` is simply false. Always start from the postcondition and substitute.
+
+</Callout>
+
+<Fold title="Details: why it works, and why the forward rule fails">
+
 A second example: with `P` being `x = y + 10` and the assignment `x = y + x`, we get `{y + x = y + 10} x = y + x {x = y + 10}`.
 
 Why is this the right rule? After the assignment, the variable `x` holds whatever value `E` had just before it. So anything we want to say about `x` afterwards must already have been true of `E` beforehand. Substituting `E` for `x` in the postcondition says precisely that.
 
-The rule is applied *backwards*, from the postcondition to the precondition. Given what we want to hold after the statement, it computes what must hold before. This feels unnatural at first, and it is tempting to propose a forward rule instead, such as
+Working backwards feels unnatural at first, and it is tempting to propose a forward rule instead, such as
 
 ```text
 {P}  x = E  {P[E/x]}       (wrong)
@@ -148,11 +176,7 @@ The rule is applied *backwards*, from the postcondition to the precondition. Giv
 
 This plausible-looking rule is unsound. Take `P` to be `x = 0`, the assignment `x = 1`, and substitute: the rule would let us conclude `{x = 0} x = 1 {1 = 0}`, a triple whose postcondition is false in every state. The backward rule has no such problem, which is why every Hoare-logic proof of straight-line code is worked from the bottom up.
 
-<Callout type="warning" title="A common mistake">
-
-Do not reason forwards by writing something like `{x = x + 1}` after `x = x + 1`. In an assertion, `x` means the current value of `x`, so `x = x + 1` is simply false. Always start from the postcondition and substitute.
-
-</Callout>
+</Fold>
 
 ## The rule of consequence
 
@@ -164,12 +188,14 @@ P ⇒ P′      {P′} C {Q′}      Q′ ⇒ Q
              {P} C {Q}
 ```
 
-The middle premise is a triple we have already proved. The outer premises are ordinary logical implications, proved with arithmetic and logic rather than with Hoare rules. The rule says that we may **strengthen the precondition** (replace `P′` with any `P` that implies it) and **weaken the postcondition** (replace `Q′` with any `Q` that it implies).
-
-Both directions make sense once we think in terms of sets of states. A stronger precondition describes fewer starting states. If `C` behaves well from every state in the larger set `P′`, it certainly behaves well from the smaller set `P`. A weaker postcondition describes more final states. If `C` always lands in `Q′`, it certainly lands in the larger set `Q`.
+The middle premise is a triple we have already proved. The outer premises are ordinary logical implications, proved with arithmetic and logic rather than with Hoare rules. The rule says that we may **strengthen the precondition** (replace `P′` with any `P` that implies it) and **weaken the postcondition** (replace `Q′` with any `Q` that it implies), never the reverse.
 
 <Mermaid code={`flowchart LR
   A["{P}<br/>fewer start states"] ==>|"P ⇒ P′"| B["{P′}"] --> S["C"] --> C["{Q′}"] ==>|"Q′ ⇒ Q"| D["{Q}<br/>more end states"]`} />
+
+<Fold title="Details: why, counterexamples and a worked proof">
+
+Both directions make sense once we think in terms of sets of states. A stronger precondition describes fewer starting states. If `C` behaves well from every state in the larger set `P′`, it certainly behaves well from the smaller set `P`. A weaker postcondition describes more final states. If `C` always lands in `Q′`, it certainly lands in the larger set `Q`.
 
 The opposite moves are unsound, and it is worth seeing why with a counterexample. From the true triple `{x = 1} y = x {y = 1}`, *weakening* the precondition to `⊤` would give `{⊤} y = x {y = 1}`, which fails when `x` starts at 2. From the true triple `{⊤} x = 5 {x > 0}`, *strengthening* the postcondition to `x > 10` would give `{⊤} x = 5 {x > 10}`, which is false. Past-paper question 3 tests exactly this distinction. See the <a href={`${import.meta.env.BASE_URL}exam-q2-q5/#q3-which-cons-moves-are-legal`}>solved paper</a>.
 
@@ -182,6 +208,8 @@ A complete small proof using consequence and assignment looks like this. We prov
   { a: "{ x > 0 }" },
 ]} />
 
+</Fold>
+
 ## Sequential composition
 
 Programs are sequences of statements, and the **sequence rule** joins proofs of the parts into a proof of the whole:
@@ -192,9 +220,13 @@ Programs are sequences of statements, and the **sequence rule** joins proofs of 
      {P} C₁; C₂ {Q}
 ```
 
-If running `C₁` from `P` leads to `R`, and running `C₂` from `R` leads to `Q`, then running both in turn leads from `P` to `Q`. The intermediate assertion `R` is sometimes called a *midcondition*. It is exactly what the `assert` statements between lines did on the specifications page.
+If running `C₁` from `P` leads to `R`, and running `C₂` from `R` leads to `Q`, then running both in turn leads from `P` to `Q`. In practice we find `R` by working backwards from `Q` through `C₂` with the assignment rule.
 
-In practice we find `R` by working backwards from `Q` through `C₂` with the assignment rule. Here is the full proof that the three-line swap is correct, with auxiliary variables `a` and `b` for the starting values:
+<Fold title="Worked proof: the three-line swap">
+
+The intermediate assertion `R` is sometimes called a *midcondition*. It is exactly what the `assert` statements between lines did on the specifications page.
+
+Here is the full proof that the three-line swap is correct, with auxiliary variables `a` and `b` for the starting values:
 
 ```python
 temp = x
@@ -215,6 +247,8 @@ The last assertion is the precondition with its two halves swapped, so the rule 
   B -->|"x = y"| C["{ temp = a ∧ x = b }"]
   C -->|"y = temp"| D["{ x = b ∧ y = a }"]`} />
 
+</Fold>
+
 ## The conditional rule
 
 An `if` statement chooses between two branches, and the **conditional rule** asks us to prove each branch separately:
@@ -226,6 +260,8 @@ An `if` statement chooses between two branches, and the **conditional rule** ask
 ```
 
 Each branch may assume the precondition *and* the outcome of the test: the `then` branch runs only when `B` is true, and the `else` branch only when it is false. Both branches must establish the same postcondition, because after the `if` we no longer know which one ran.
+
+<Fold title="Example: the maximum of two numbers">
 
 For example, to prove that
 
@@ -239,6 +275,8 @@ else:
 ```
 
 it suffices to prove `{x ≥ y} z = x {z = max(x, y)}` and `{¬(x ≥ y)} z = y {z = max(x, y)}`. By the assignment rule the first needs `x ≥ y ⇒ x = max(x, y)`, and the second needs `x < y ⇒ y = max(x, y)`. Both are plain facts about the maximum, so both branches hold and the rule gives the whole statement.
+
+</Fold>
 
 ## The loop rule
 
@@ -278,13 +316,17 @@ The postcondition has two parts. `s · s ≤ X` says `s` is not too big, and `X 
 I  =  x = X ∧ X ≥ 0 ∧ s · s ≤ X
 ```
 
+<Fold title="Details: the three obligations">
+
 - *Initialisation*: after `s = 0`, `s · s = 0 ≤ X` because `X ≥ 0`.
 - *Preservation*: the body runs only when `(s+1)·(s+1) ≤ x`. That is exactly what we need after `s = s + 1` for the new `s` to satisfy `s · s ≤ X`. Formally, the assignment rule asks for `(s+1)·(s+1) ≤ X` before the statement, and the loop test provides it.
 - *Exit*: when the loop stops, `¬((s+1)·(s+1) ≤ x)`, that is `X < (s+1)·(s+1)`. Together with `s · s ≤ X` from the invariant, this is the postcondition.
 
+</Fold>
+
 ## Proof outlines
 
-Written out as a tree, even this small proof is unwieldy: the lecture slides need a full page of nested rule applications for the square-root loop. In practice we write a **proof outline** instead. A proof outline is the program annotated with an assertion between every pair of statements. Two assertions written one after the other mean that the rule of consequence was used, and that the first implies the second. The rule applications are then implicit, but every step can still be checked. Here is the outline for the square-root proof:
+Written out as a tree, even this small proof is unwieldy. In practice we write a **proof outline** instead. A proof outline is the program annotated with an assertion between every pair of statements. Two assertions written one after the other mean that the rule of consequence was used, and that the first implies the second. The rule applications are then implicit, but every step can still be checked. Here is the outline for the square-root proof:
 
 <Proof lines={[
   { a: "{ x = X ∧ X ≥ 0 }" },

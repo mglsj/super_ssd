@@ -1,14 +1,12 @@
 ---
 title: "Recursion, BST & AVL Trees"
-description: "How recursive functions run and why they are correct, how binary search trees keep data ordered, why sorted input ruins them, and how AVL trees use rotations to stay balanced."
+description: "How recursion runs and why it is correct, binary search trees, and how AVL rotations keep them balanced."
 part: python
 order: 5
 ---
 import { Callout, Fold, Mermaid, Flashcards, Quiz } from '@/components/notes';
 
-A **recursive** function is one that calls itself. Recursion is the natural way to work with data that is defined in terms of smaller pieces of the same kind, and the most important such data structure in this course is the **binary search tree**: a tree in which every node has at most two children, arranged so that the keys stay in sorted order. This page begins with how recursion executes and why a recursive function can be proved correct by <a href={`${import.meta.env.BASE_URL}induction/`}>induction</a>. It then introduces binary search trees, shows how their efficiency depends entirely on their shape, and explains how **AVL trees** repair the shape after every change so that searching is always fast.
-
-The trees here are built from the <a href={`${import.meta.env.BASE_URL}dictionaries/`}>dictionaries</a> of the previous page, or from small node objects in Lab 08, and the same three ideas recur throughout: an **invariant** that the structure must satisfy, operations that **preserve** it, and a **checker** that verifies it.
+A **recursive** function is one that calls itself. Recursion is the natural way to work with data defined in terms of smaller pieces of the same kind, and the main example in this course is the **binary search tree**: a tree in which every node has at most two children, arranged so that the keys stay in sorted order.
 
 ## Recursion and the call stack
 
@@ -20,6 +18,10 @@ def fact(n):
         return 1
     return n * fact(n - 1)   # recursive case, on a smaller input
 ```
+
+Each call gets its own **stack frame** on the **call stack**; frames finish in reverse order (last in, first out), and a missing base case ends in a `RecursionError` once about 1000 frames pile up.
+
+<Fold title="Details: stack frames and the call stack">
 
 It can seem puzzling that `fact` can use `fact` before it has finished. The explanation is in how Python runs function calls. Each call creates a new **stack frame**, a small record holding that call's own parameters and local variables and the point to which it must return. Calling `fact(3)` creates a frame in which `n` is 3; when that call reaches `fact(n - 1)`, its own frame is **suspended**, and a new frame is created in which `n` is 2. The frames form a **call stack**: each new call is pushed on top, and when a call returns, its frame is removed and the frame below resumes where it left off. Calls therefore finish in the reverse of the order in which they started (last in, first out).
 
@@ -36,6 +38,8 @@ The solid arrows are the calls going down; at that point four frames are on the 
 
 Two corner cases follow from this picture. If the base case is missing, or the input never reaches it, the calls never stop: `fact(-1)` calls `fact(-2)`, then `fact(-3)`, and so on. Each call adds a frame, and Python limits the depth of the stack (by default to about 1000 frames), so the program fails with a `RecursionError` rather than running forever. The same limit means that even a correct recursive function fails if the recursion is very deep, which will matter for degenerate trees below.
 
+</Fold>
+
 ## Why recursion is correct
 
 How do we convince ourselves that `fact(n)` really returns `n!`? Tracing a few calls checks a few inputs, but the argument that covers all of them is **mathematical induction**, and the structure of a recursive function matches the structure of an induction proof exactly.
@@ -45,13 +49,30 @@ Let `P(n)` be the statement "`fact(n)` returns `n!`", for every integer `n ≥ 0
 - **Base case**, `P(0)`: `fact(0)` takes the first branch and returns 1, which is `0!`.
 - **Inductive step**: assume `P(k)` for some `k ≥ 0`, that is, `fact(k)` returns `k!`. This assumption is the **inductive hypothesis**. Then `fact(k + 1)` takes the second branch and returns `(k + 1) · fact(k)`, which by the hypothesis is `(k + 1) · k! = (k + 1)!`. So `P(k + 1)` holds.
 
-By induction, `P(n)` holds for every `n ≥ 0`. Notice what the inductive hypothesis does: when reasoning about the recursive case we may *assume* that the recursive call on the smaller input returns the right answer, and need only check that the current call combines that answer correctly. This is the right way to read and write recursive code in general. We do not trace the recursion all the way down; we check the base case, and we check one level of the recursive case under the assumption that smaller calls work.
+By induction, `P(n)` holds for every `n ≥ 0`. Notice what the inductive hypothesis does: when reasoning about the recursive case we may *assume* that the recursive call on the smaller input returns the right answer, and need only check that the current call combines that answer correctly.
+
+For trees, the same reasoning is called **structural induction**. We prove a property for the empty tree, then prove it for a node under the assumption that it holds for the node's two subtrees, which are smaller trees. All the tree functions below are recursive in exactly this way.
+
+<Fold title="Details: reading recursive code, and termination">
+
+This is the right way to read and write recursive code in general. We do not trace the recursion all the way down; we check the base case, and we check one level of the recursive case under the assumption that smaller calls work.
 
 The proof also contains the termination argument. Each recursive call is on a strictly smaller non-negative integer, and such a sequence cannot decrease forever, so the base case is always reached. This is why the precondition `n ≥ 0` matters: from `n = -1` the argument never reaches 0, and the induction says nothing.
 
-For trees, the same reasoning is called **structural induction**. We prove a property for the empty tree, then prove it for a node under the assumption that it holds for the node's two subtrees, which are smaller trees. All the tree functions on this page are recursive in exactly this way, and we will use structural induction to argue that insertion is correct.
+</Fold>
 
 ## Ordered data with cheap updates
+
+A sorted list searches fast but updates slowly; a balanced BST does both in O(log n).
+
+| Structure | Search | Insert / delete |
+|---|---|---|
+| sorted list | O(log n), binary search | O(n): elements shift |
+| balanced BST | O(log n) | O(log n): walk down and relink one node |
+
+The cost of every BST operation is proportional to the length of the path it walks, which is at most the tree's **height**, the number of nodes on the longest path from the root down to a leaf. The O(log n) entries hold only while the tree is balanced.
+
+<Fold title="Details: why a list is slow to update and a tree is not">
 
 Sorting and searching underlie almost everything computers do, from database queries to auto-completion. The simplest structure that supports fast searching is a sorted list: binary search finds a key in **O(log n)** steps by repeatedly halving the range. Updating a sorted list is slow, however. To insert 18 into `[3, 8, 15, 20, 31, 42, 57]` and keep it sorted, every element after the insertion point (20, 31, 42 and 57) must shift one place to the right, and in general an insertion or deletion moves O(n) elements.
 
@@ -66,12 +87,9 @@ A binary search tree avoids the shifting. Its keys are not stored in a contiguou
   r42 --> r57((57))
   r15 -->|"right"| r18((18))`} />
 
-| Structure | Search | Insert / delete |
-|---|---|---|
-| sorted list | O(log n), binary search | O(n): elements shift |
-| balanced BST | O(log n) | O(log n): walk down and relink one node |
+Balanced search trees of various kinds (AVL trees, red-black trees and B-trees) are the basis of database indexes and file systems.
 
-The cost of every BST operation is proportional to the length of the path it walks, which is at most the tree's **height**, the number of nodes on the longest path from the root down to a leaf. The O(log n) entries hold only while the tree is balanced, a qualification that occupies the second half of this page. Balanced search trees of various kinds (AVL trees, red-black trees and B-trees) are the basis of database indexes and file systems.
+</Fold>
 
 ## Binary search trees
 
@@ -86,17 +104,23 @@ In particular the keys are distinct.
 
 </Callout>
 
-The **left subtree** of a node is the whole tree hanging from its left child, not just the child itself, and likewise on the right. The definition can be put recursively: a tree is a BST if it is empty, or if its root's key is larger than every key in the left subtree and smaller than every key in the right subtree, and both subtrees are themselves BSTs.
-
 <Mermaid code={`flowchart TD
   r50((50)) --> r30((30))
   r50 --> r70((70))
   r30 --> r20((20))
   r30 --> r40((40))`} />
 
-In this tree the left subtree of 50 contains 30, 20 and 40, all smaller than 50, and its right subtree contains only 70. The left subtree of 30 is `{20}` and its right subtree is `{40}`. Every node passes, so this is a BST.
+The point of the property is that it tells a search which way to go. To find a key, compare it with the root: if it is equal we are done, if it is smaller it can only be in the left subtree, and if it is larger it can only be in the right subtree. Each comparison discards one whole subtree. A second consequence is that an **in-order traversal**, which visits the left subtree, then the node, then the right subtree, lists the keys in increasing order.
 
-The point of the property is that it tells a search which way to go. To find a key, compare it with the root: if it is equal we are done, if it is smaller it can only be in the left subtree, and if it is larger it can only be in the right subtree. Each comparison discards one whole subtree. A second consequence is that an **in-order traversal**, which visits the left subtree, then the node, then the right subtree, lists the keys in increasing order. For the tree with root 8, left subtree `3 → (1, 6 → (4, 7))` and right subtree `10 → 14 → 13` used in the lecture, the in-order traversal is 1, 3, 4, 6, 7, 8, 10, 13, 14. Many different trees hold the same set of keys, depending on the order in which they were inserted, but all of them give the same in-order sequence.
+<Fold title="Details: subtrees, the example, and in-order traversal">
+
+The **left subtree** of a node is the whole tree hanging from its left child, not just the child itself, and likewise on the right. The definition can be put recursively: a tree is a BST if it is empty, or if its root's key is larger than every key in the left subtree and smaller than every key in the right subtree, and both subtrees are themselves BSTs.
+
+In the tree above the left subtree of 50 contains 30, 20 and 40, all smaller than 50, and its right subtree contains only 70. The left subtree of 30 is `{20}` and its right subtree is `{40}`. Every node passes, so this is a BST.
+
+For the tree with root 8, left subtree `3 → (1, 6 → (4, 7))` and right subtree `10 → 14 → 13`, the in-order traversal is 1, 3, 4, 6, 7, 8, 10, 13, 14. Many different trees hold the same set of keys, depending on the order in which they were inserted, but all of them give the same in-order sequence.
+
+</Fold>
 
 ### The property is about whole subtrees
 
@@ -111,13 +135,19 @@ It is tempting to check the BST property locally: for each node, check that its 
 
 Every parent-child pair is in order: 2 is less than 5, 8 is greater than 5, 1 is less than 2 and 6 is greater than 2. But 6 lies in the left subtree of 5, and 6 is greater than 5, so the tree is not a BST.
 
+The correct check passes an **open interval** `(lo, hi)` down the tree: going left from key `k` makes `k` the upper bound, going right makes it the lower bound.
+
+<Fold title="Details: why the local check breaks search, and the interval">
+
 The failure is not a technicality; it breaks searching. A search for 6 compares 6 with the root 5, goes right because 6 is larger, compares with 8, goes left, and finds an empty subtree. It reports that 6 is absent, although 6 is in the tree. The search relies on the guarantee that everything larger than 5 is on the right, and the local check does not provide it.
 
 The correct way to check the property is to notice that each node's key is constrained by *all* of its ancestors, not just its parent. Going left from a node with key `k` means every key below must be less than `k`; going right means every key below must be greater than `k`. These constraints accumulate as we descend, and at any node they amount to an **open interval** `(lo, hi)` in which the key must lie: `lo < key < hi`. The root may have any key. Its left child inherits the interval `(lo, key)`, and its right child `(key, hi)`. For the tree above, the node 6 is reached by going left from 5 and right from 2, so it must lie in `(2, 5)`, and it does not. We return to this idea in the AVL checker at the end of the page.
 
+</Fold>
+
 ## Insertion and search
 
-In the lecture a node is a dictionary holding a key and references to two children, with `None` standing for an empty subtree:
+A node is a dictionary holding a key and references to two children, with `None` standing for an empty subtree:
 
 ```python
 def make_node(key):
@@ -133,7 +163,11 @@ def insert(root, key):
     return root                           # hand the subtree back up
 ```
 
-The function returns the root of the subtree after insertion, and every caller stores that result back into the link it came down: `root["left"] = insert(root["left"], key)`. Most of the time the returned node is the same node that was passed in, so the assignment changes nothing. It matters at exactly one place, the bottom, where the base case creates the new node and the frame above attaches it. (For AVL trees it will also matter wherever a rotation changes a subtree's root.) A key that is already present matches neither branch and is left alone, so the keys stay distinct. The lecture's version sends equal keys to the right with a plain `else`, which would store duplicates and break the strict inequality in the definition.
+Each call returns the root of its subtree, and the caller stores it back into the link it came down. A key already present is left alone, so keys stay distinct.
+
+<Fold title="Details: the returned root, a trace, and the proof">
+
+The function returns the root of the subtree after insertion, and every caller stores that result back into the link it came down: `root["left"] = insert(root["left"], key)`. Most of the time the returned node is the same node that was passed in, so the assignment changes nothing. It matters at exactly one place, the bottom, where the base case creates the new node and the frame above attaches it. (For AVL trees it will also matter wherever a rotation changes a subtree's root.) A key that is already present matches neither branch and is left alone, so the keys stay distinct. Sending equal keys right with a plain `else` would store duplicates and break the strict inequality in the definition.
 
 To see the call stack at work, insert 40 into the tree built from 10, 50, 30, 70, 20:
 
@@ -151,7 +185,9 @@ At the moment of the base case, four frames are on the stack, one per level of t
 
 The correctness of `insert` is a structural induction. Claim: if `root` is a BST with key set `S`, then `insert(root, key)` returns a BST with key set `S ∪ {key}` (the union of `S` and the new key). For the empty tree, the result is a single node, which is a BST. For a non-empty tree with `key < root["key"]`, the inductive hypothesis says the recursive call returns a BST whose keys are the old left keys plus `key`. All of those are smaller than the root's key: the old ones by the BST property, and `key` by the comparison that sent us left. The right subtree is unchanged, so the whole tree is still a BST. The case `key > root["key"]` is symmetric, and the equal case changes nothing. Notice that the argument needs the whole-subtree form of the property, and it is exactly the comparison on the way down that guarantees it.
 
-Searching follows the same path without changing anything. It can be written recursively or with a loop; the homework asked for both. The lecture's versions return the node found or `None`; these return a boolean.
+</Fold>
+
+Searching follows the same path without changing anything. It can be written recursively or with a loop; the homework asked for both.
 
 ```python
 def search_rec(root, key):
@@ -179,18 +215,24 @@ A BST maintains the ordering property, but nothing in `insert` controls its shap
 <Mermaid code={`flowchart LR
   a((10)) --> b((20)) --> c((30)) --> d((40)) --> e((50))`} />
 
-This tree is **degenerate**: every node has at most one child, so it is really a linked list, and its height equals the number of keys. A search for 50 visits all five nodes, and in general search, insertion and deletion take O(n) steps instead of O(log n). The same happens with input in decreasing order, and partly with nearly sorted input, which is very common in practice.
+This tree is **degenerate**: every node has at most one child, so it is really a linked list, and its height equals the number of keys.
 
 | Tree shape | Height | Search |
 |---|---|---|
 | balanced | about log₂ n | O(log n) |
 | degenerate (sorted input) | n | O(n) |
 
+<Fold title="Details: how bad a degenerate tree gets">
+
+A search for 50 visits all five nodes, and in general search, insertion and deletion take O(n) steps instead of O(log n). The same happens with input in decreasing order, and partly with nearly sorted input, which is very common in practice.
+
 The difference is large. With a million keys, log₂ n is about 20, so a balanced tree answers a lookup in about 20 comparisons. If the keys are sorted user IDs inserted in order, the degenerate tree needs up to a million. The recursive `insert` would not even finish: a path a million nodes long needs a million stack frames, far beyond the recursion limit. The root cause is that a plain BST does not care about its shape; we need a tree that actively maintains a good one.
+
+</Fold>
 
 ## Height balance and AVL trees
 
-Throughout, we measure height as in the lecture and Lab 08: an empty subtree has height 0, a leaf has height 1, and in general the height of a node is one more than the larger of its children's heights. The **balance factor** of a node compares the heights of its two subtrees:
+Throughout, we measure height as in Lab 08: an empty subtree has height 0, a leaf has height 1, and in general the height of a node is one more than the larger of its children's heights. The **balance factor** of a node compares the heights of its two subtrees:
 
 ```text
 bf(node) = height(node.left) − height(node.right)
@@ -208,6 +250,8 @@ An **AVL tree** (after its inventors Adelson-Velsky and Landis) is a binary sear
 
 </Callout>
 
+<Fold title="Details: stored heights, and balance at every node">
+
 The second condition is needed because the tree stores each node's height rather than recomputing it, so that balance factors can be found in constant time; the stored values are only useful if they are correct. The balance condition must hold at *every* node, not just at the root. In the tree below the root is fine, with a left height of 3 and a right height of 2, but node 30 has a left subtree of height 2 (20 and 10) and an empty right subtree, so its balance factor is +2 and the tree is not an AVL tree.
 
 <Mermaid code={`flowchart TD
@@ -218,9 +262,13 @@ The second condition is needed because the tree stores each node's height rather
   a70 --> a60((60))
   a70 --> a80((80))`} />
 
+</Fold>
+
 ### Why the height is logarithmic
 
-The balance condition only forbids a difference of more than one at each node, which may look too weak to keep the tree short. To see that it is enough, we ask the opposite question: what is the *smallest* number of nodes an AVL tree of height `h` can have? Call it `N(h)`.
+The balance condition only forbids a difference of more than one at each node, which may look too weak to keep the tree short. To see that it is enough, we ask the opposite question: what is the *smallest* number of nodes an AVL tree of height `h` can have? Call it `N(h)`. It satisfies `N(h) = N(h−1) + N(h−2) + 1` (0, 1, 2, 4, 7, 12, 20, …), which grows like the Fibonacci numbers, so the height grows only logarithmically.
+
+<Fold title="Details: deriving N(h) and the bound">
 
 A tree of height 0 is empty, so `N(0) = 0`, and a tree of height 1 is a single node, so `N(1) = 1`. For `h ≥ 2`, the root has one subtree of height `h − 1` (otherwise the tree would not have height `h`). By the balance condition the other subtree has height `h − 1` or `h − 2`, and to use as few nodes as possible we choose `h − 2` and make both subtrees as small as possible. So
 
@@ -230,7 +278,11 @@ N(h) = N(h−1) + N(h−2) + 1
 
 counting the root, one minimal subtree of height `h − 1` and one of height `h − 2`. The sequence starts 0, 1, 2, 4, 7, 12, 20, … . It is the Fibonacci recurrence plus one, and indeed `N(h) = F(h+2) − 1`, where `F` is the Fibonacci sequence 1, 1, 2, 3, 5, 8, 13, 21, … . Fibonacci numbers grow exponentially, roughly by a factor of 1.618 at each step, so the minimum number of nodes grows exponentially with the height. Turned around, the height grows only logarithmically with the number of nodes.
 
-A short induction gives a simple bound. Since `N(h−1) ≥ N(h−2)`, the recurrence gives `N(h) ≥ 2 · N(h−2) + 1`: adding two levels of height at least doubles the minimum number of nodes. From this we can prove `N(h) ≥ 2^(h/2) − 1` by strong induction (it holds for `h = 0` and `h = 1`, and if it holds for `h − 2` then `N(h) ≥ 2(2^((h−2)/2) − 1) + 1 = 2^(h/2) − 1`). An AVL tree with `n` nodes and height `h` therefore has `n ≥ 2^(h/2) − 1`, that is, `h ≤ 2 log₂(n + 1)`. The precise bound, which uses the growth rate of the Fibonacci numbers, is
+A short induction gives a simple bound. Since `N(h−1) ≥ N(h−2)`, the recurrence gives `N(h) ≥ 2 · N(h−2) + 1`: adding two levels of height at least doubles the minimum number of nodes. From this we can prove `N(h) ≥ 2^(h/2) − 1` by strong induction (it holds for `h = 0` and `h = 1`, and if it holds for `h − 2` then `N(h) ≥ 2(2^((h−2)/2) − 1) + 1 = 2^(h/2) − 1`). An AVL tree with `n` nodes and height `h` therefore has `n ≥ 2^(h/2) − 1`, that is, `h ≤ 2 log₂(n + 1)`.
+
+</Fold>
+
+The precise bound, which uses the growth rate of the Fibonacci numbers, is
 
 ```text
 h < 1.4405 · log₂(n + 2) − 0.3277
@@ -277,11 +329,17 @@ def rotate_right(z):
 
 Only three references change: `z.left`, `y.right`, and the link from the parent, which the caller updates by storing the returned `y`, just as `insert` stores the result of its recursive call. The order of the height updates matters, because `y`'s height now depends on `z`'s. The **left rotation**, `rotate_left`, is the mirror image, with every "left" and "right" exchanged; it fixes a node that is too right-heavy.
 
+<Fold title="Details: why a rotation keeps BST order">
+
 Why is the result still a BST? Before the rotation, `T3` lies in the left subtree of `z`, so all its keys are less than `z`, and in the right subtree of `y`, so all its keys are greater than `y`. In other words, every key in `T3` lies between `y` and `z`. After the rotation `T3` is the left subtree of `z`, which requires its keys to be less than `z`, and lies in the right subtree of `y`, which requires them to be greater than `y`: exactly the same facts. The other relationships (`x` and its subtrees below `y`, `T4` above `z`, `y` less than `z`) are unchanged as well. Equivalently, the in-order sequence, `x`'s subtree, `y`, `T3`, `z`, `T4`, is identical before and after. A rotation changes the shape and never the order.
+
+</Fold>
 
 ## The four imbalance cases
 
 When a node `z` has balance factor +2, its left subtree is two levels taller than its right. Whether a single rotation fixes this depends on *where* inside the left subtree the extra height is. The four cases are named after the path from `z` to the extra height: **LL** means the left subtree of the left child, **LR** the right subtree of the left child, and similarly **RR** and **RL** on the other side.
+
+<Fold title="Details: the LL and LR cases worked through">
 
 **LL case** (`bf(z) = +2`, `bf(y) ≥ 0`, where `y = z.left`). The extra height is under `y` on the outside. A right rotation at `z` fixes it. To see this, let `T4` have height `h`. Then `y` has height `h + 2`, and in the insertion case `x` has height `h + 1` and `T3` height `h`. After the rotation, `z` has children `T3` and `T4`, both of height `h`, so `z` has height `h + 1` and balance factor 0. Then `y` has children `x` and `z`, both of height `h + 1`, so it is balanced too, with height `h + 2`. The smallest example is inserting 30, 20, 10: the result is 20 with children 10 and 30.
 
@@ -307,6 +365,8 @@ When a node `z` has balance factor +2, its left subtree is two levels taller tha
   B ==> A`} />
 
 Here `x` is the right child of `y`, and it ends up as the root of the subtree, with `y` and `z` as its children. Its two subtrees are shared out: `T2`, whose keys lie between `y` and `x`, becomes the right subtree of `y`, and `T3`, whose keys lie between `x` and `z`, becomes the left subtree of `z`. The in-order sequence `T1, y, T2, x, T3, z, T4` is again unchanged. The smallest example is inserting 30, 10, 20.
+
+</Fold>
 
 The **RR** and **RL** cases are the mirror images, for `bf(z) = −2`: RR (`bf(z.right) ≤ 0`) is fixed by one left rotation at `z`, and RL (`bf(z.right) > 0`) by a right rotation at `z.right` followed by a left rotation at `z`. A useful way to remember the cases: when the two letters are the same, one rotation suffices; when they differ, two are needed.
 
@@ -351,17 +411,11 @@ def rebalance(z):
     return z                               # already balanced
 ```
 
-The lecture's dictionary-based version has the same structure, with functions `get_height`, `get_balance`, `update_height`, `rotate_left`, `rotate_right` and `balance_node`.
+A dictionary-based version has the same structure, with functions `get_height`, `get_balance`, `update_height`, `rotate_left`, `rotate_right` and `balance_node`.
 
 ## Rebalancing after insertion and deletion
 
-The repair process is the same for both operations. Perform the ordinary BST insertion or deletion recursively; then, as each recursive call returns, on the way back up from the change towards the root, recompute the height of the current node and call `rebalance` on it, storing the returned node in the parent's link. The lecture summarises it as: insert as in a BST, update heights bottom-up, check the balance factor, rotate if needed, and return the possibly new root.
-
-The two operations differ in how many rotations they may need. After an **insertion**, the first unbalanced node met on the way up is repaired by one single or double rotation, and that is the end of it. The height calculations in the previous section show why. Before the insertion, the subtree rooted at `z` had height `h + 2`; the insertion raised it to `h + 3`, which unbalanced `z`; and after the rotation its height is `h + 2` again. Every ancestor of `z` therefore sees a subtree of exactly the same height as before the insertion, so none of their balance factors has changed.
-
-A **deletion** lowers a subtree's height, and the repair does not always restore the original height. Suppose a deletion in `T4` makes `z` left-heavy by two, where before the deletion `z` had height `h + 3`, with `y` of height `h + 2` and `T4` of height `h + 1`, and now `T4` has height `h`. If `bf(y) = 0`, both children of `y` have height `h + 1`; after a right rotation `z` has height `h + 2` and `y` has height `h + 3`, the same as before, and the process stops. This case, with `bf(y) = 0`, cannot arise after an insertion, which is why the decision chart says `≥ 0` rather than `> 0`; a single rotation is correct for it. But if `bf(y) = +1`, the rotated subtree has height `h + 2`, one less than before. The ancestor above now sees a shorter subtree, and its own balance factor may become ±2. So a deletion may need a rotation at every level on the way up, which is still only O(log n) rotations, each taking constant time.
-
-Deleting a node with no children simply removes it, and a node with one child is replaced by that child. A node with two children cannot be removed directly without disconnecting a subtree, so its key is replaced by that of its **in-order successor**, the smallest key in its right subtree (found by going right once and then left as far as possible), and the successor is deleted from the right subtree instead. The successor is the next key in sorted order, so putting it in the deleted node's place preserves the BST order, and it has no left child, so deleting it is one of the easy cases.
+The repair process is the same for both operations. Perform the ordinary BST insertion or deletion recursively; then, as each recursive call returns, on the way back up from the change towards the root, recompute the height of the current node and call `rebalance` on it, storing the returned node in the parent's link. In short: insert as in a BST, update heights bottom-up, check the balance factor, rotate if needed, and return the possibly new root.
 
 <Callout type="important" title="Exam and lab points">
 
@@ -369,11 +423,19 @@ An **insertion** needs at most one rotation, single or double, because the rotat
 
 </Callout>
 
+<Fold title="Details: insertion vs deletion, and deleting a node">
+
+The two operations differ in how many rotations they may need. After an **insertion**, the first unbalanced node met on the way up is repaired by one single or double rotation, and that is the end of it. The height calculations in the previous section show why. Before the insertion, the subtree rooted at `z` had height `h + 2`; the insertion raised it to `h + 3`, which unbalanced `z`; and after the rotation its height is `h + 2` again. Every ancestor of `z` therefore sees a subtree of exactly the same height as before the insertion, so none of their balance factors has changed.
+
+A **deletion** lowers a subtree's height, and the repair does not always restore the original height. Suppose a deletion in `T4` makes `z` left-heavy by two, where before the deletion `z` had height `h + 3`, with `y` of height `h + 2` and `T4` of height `h + 1`, and now `T4` has height `h`. If `bf(y) = 0`, both children of `y` have height `h + 1`; after a right rotation `z` has height `h + 2` and `y` has height `h + 3`, the same as before, and the process stops. This case, with `bf(y) = 0`, cannot arise after an insertion, which is why the decision chart says `≥ 0` rather than `> 0`; a single rotation is correct for it. But if `bf(y) = +1`, the rotated subtree has height `h + 2`, one less than before. The ancestor above now sees a shorter subtree, and its own balance factor may become ±2. So a deletion may need a rotation at every level on the way up, which is still only O(log n) rotations, each taking constant time.
+
+Deleting a node with no children simply removes it, and a node with one child is replaced by that child. A node with two children cannot be removed directly without disconnecting a subtree, so its key is replaced by that of its **in-order successor**, the smallest key in its right subtree (found by going right once and then left as far as possible), and the successor is deleted from the right subtree instead. The successor is the next key in sorted order, so putting it in the deleted node's place preserves the BST order, and it has no left child, so deleting it is one of the easy cases.
+
+</Fold>
+
 ## Checking the AVL invariant
 
 Lab 08 asks for a function `check_avl(tree)` that returns `True` exactly when the tree satisfies the three AVL conditions and `tree.size` equals the number of nodes, and returns `False` otherwise, never raising an exception. This is a test oracle for property-based testing: after any sequence of random insertions and deletions, `check_avl` must still hold. A checker is only useful if it is strict, so it must not take anything about the tree on trust.
-
-The checker is one recursive function on subtrees, written by structural induction like everything else on this page. For each subtree it returns two facts that the parent needs, its *real* height and its number of nodes, and it raises an exception as soon as it finds a violation. The BST condition is checked with the open interval from earlier: each call receives the bounds `lo` and `hi` that its keys must lie strictly between, with `None` meaning "no bound".
 
 ```python
 def check(node, lo=None, hi=None):
@@ -399,9 +461,15 @@ def check_avl(tree):
     return count == tree.size
 ```
 
+<Fold title="Details: how the checker works">
+
+The checker is one recursive function on subtrees, written by structural induction. For each subtree it returns two facts that the parent needs, its *real* height and its number of nodes, and it raises an exception as soon as it finds a violation. The BST condition is checked with the open interval from earlier: each call receives the bounds `lo` and `hi` that its keys must lie strictly between, with `None` meaning "no bound".
+
 Each part of the function corresponds to one of the conditions. The interval test enforces BST order over whole subtrees: going left narrows the upper bound to the current key, going right narrows the lower bound, and the inherited bound is passed on unchanged. Keys are compared only with `<`, as Lab 08 requires, and because the interval is open, a key equal to one of its ancestors is rejected too. On the 6-under-5 tree, the calls are `check(5)` with no bounds, `check(2)` with bounds `(None, 5)`, `check(1)` with `(None, 2)`, and `check(6)` with `(2, 5)`, where the test `6 < 5` fails.
 
 The balance test uses the heights `hl` and `hr` that the recursive calls *computed*, not the values stored in the nodes. This is the reason for returning heights at all. A buggy tree might store heights that are wrong, or store correct heights but be unbalanced; a checker that read `node.left.height` would be fooled by the first kind, because it would be checking the tree's own possibly false claims about itself. Computing the real height and then comparing it with the stored one catches both kinds separately. Finally, counting the nodes catches an implementation whose `size` field drifts from the actual contents. Together these catch every faulty tree the lab grader tries: a parent and child out of order, a key out of order deep in the tree or equal to an ancestor's, an unbalanced tree with correct stored heights, a node storing a wrong height, and a wrong size.
+
+</Fold>
 
 <Callout type="warning" title="A common mistake">
 
@@ -437,7 +505,7 @@ A binary search tree keeps keys in order with the invariant that everything in a
   { q: "Why should a BST checker pass down `(lo, hi)`?", options: ["It makes the checker faster", "Parent-child checks miss violations deeper in subtrees", "It computes the heights"], answer: 1, why: "The 6-under-5 tree passes every parent-child check but is not a BST." },
   { q: "Which are AVL invariants?", options: ["BST order", "Stored heights are correct", "Every node has two children", "Balance factor in −1..1"], answer: [0, 1, 3], why: "AVL trees can have nodes with one child." },
   { q: "Search in a degenerate BST of n nodes is…", options: ["O(1)", "O(log n)", "O(n)", "O(n log n)"], answer: 2, why: "The height is n, so a search may visit every node." },
-  { q: "What happens when `fact(-1)` is called with the `fact` on this page?", options: ["It returns 1", "It returns 0", "It raises `RecursionError`"], answer: 2, why: "The argument never reaches the base case 0, so frames pile up until the recursion limit is hit." },
+  { q: "What happens when `fact(-1)` is called with the `fact` above?", options: ["It returns 1", "It returns 0", "It raises `RecursionError`"], answer: 2, why: "The argument never reaches the base case 0, so frames pile up until the recursion limit is hit." },
 ]} />
 
 <p class="sources">Sources: lec 7 - recursion, bst, avl tree.ipynb, lab08_assignment.pdf</p>
