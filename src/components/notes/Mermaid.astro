@@ -1,0 +1,106 @@
+---
+/**
+ * A Mermaid diagram drawn in the browser, coloured from the site's Starwind tokens
+ * (--background, --foreground, --primary, --secondary, …) and redrawn when the reader flips light/dark.
+ *   <Mermaid code={`flowchart LR
+ *     A --> B`} />
+ */
+interface Props {
+  code: string;
+  caption?: string;
+}
+const { code, caption } = Astro.props;
+---
+
+<figure class="diagram mermaid-diagram">
+  <pre class="mermaid-src" data-mermaid-src>{code}</pre>
+  {caption && <figcaption>{caption}</figcaption>}
+</figure>
+
+<script>
+  type Mermaid = typeof import('mermaid').default;
+  let mermaidPromise: Promise<Mermaid> | undefined;
+  let run = 0;
+
+  const token = (name: string, fallback: string) =>
+    getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+
+  function themeVariables() {
+    const bg = token('--background', '#f8f2e6');
+    const raised = token('--card', '#f0e7d6');
+    const fg = token('--foreground', '#2d2620');
+    const muted = token('--muted-foreground', '#675c4f');
+    const accent = token('--primary', '#9c4a24');
+    const sage = token('--secondary', '#4e6743');
+    const border = token('--border', '#e3d8c3');
+    const dark = document.documentElement.classList.contains('dark');
+    return {
+      darkMode: dark,
+      background: bg,
+      fontFamily: '"Newsreader Variable", Georgia, serif',
+      fontSize: '17px',
+      primaryColor: raised,
+      primaryTextColor: fg,
+      primaryBorderColor: sage,
+      secondaryColor: bg,
+      tertiaryColor: bg,
+      mainBkg: raised,
+      nodeBorder: sage,
+      lineColor: muted,
+      textColor: fg,
+      clusterBkg: bg,
+      clusterBorder: border,
+      edgeLabelBackground: bg,
+      actorBkg: raised,
+      actorBorder: sage,
+      actorTextColor: fg,
+      signalColor: fg,
+      signalTextColor: fg,
+      noteBkgColor: bg,
+      noteTextColor: fg,
+      noteBorderColor: accent,
+      quadrant1Fill: raised,
+      quadrant2Fill: bg,
+      quadrant3Fill: bg,
+      quadrant4Fill: raised,
+      quadrantPointFill: accent,
+      quadrantPointTextFill: fg,
+      quadrantTitleFill: fg,
+      quadrantXAxisTextFill: muted,
+      quadrantYAxisTextFill: muted,
+      quadrantInternalBorderStrokeFill: border,
+      quadrantExternalBorderStrokeFill: border,
+    };
+  }
+
+  async function draw() {
+    const figures = document.querySelectorAll<HTMLElement>('.mermaid-diagram');
+    if (!figures.length) return;
+    mermaidPromise ??= import('mermaid').then((m) => m.default);
+    const mermaid = await mermaidPromise;
+    mermaid.initialize({ startOnLoad: false, theme: 'base', securityLevel: 'strict', themeVariables: themeVariables() });
+    run += 1;
+    let i = 0;
+    for (const fig of figures) {
+      const src = fig.querySelector<HTMLElement>('[data-mermaid-src]')?.textContent ?? '';
+      try {
+        const { svg } = await mermaid.render(`mmd-${run}-${i++}`, src);
+        let out = fig.querySelector<HTMLElement>('.mermaid-out');
+        if (!out) {
+          out = document.createElement('div');
+          out.className = 'mermaid-out';
+          fig.prepend(out);
+        }
+        out.innerHTML = svg;
+        fig.dataset.rendered = '';
+      } catch (e) {
+        console.error('Mermaid failed', e);
+      }
+    }
+  }
+
+  // first paint, client-side navigations (if any), and light/dark flips
+  draw();
+  document.addEventListener('astro:after-swap', draw);
+  new MutationObserver(() => draw()).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+</script>

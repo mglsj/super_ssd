@@ -1,0 +1,19 @@
+product: Spotify-style study notes site for a software systems course (Python, Hoare logic), built for students with short attention spans
+personality: [bold, playful, friendly]
+sizes: [16, 20, 24, 48, 96]
+dir: src/components/icons
+avoid: [letters or numbers inside icons, emoji-like faces]
+dna:
+  style: duotone
+  stroke: 2.5    # heavy, playful weight; keylines shrunk by the extra half-stroke
+  grid: 24
+  padding: 1
+  keylines: { circle: 19.5, square: 17.5, portrait: [15.5, 19.5], landscape: [19.5, 15.5] }
+  corners: { family: squircle, radius: { large: 4, small: 2 }, largeThreshold: 8 }
+  caps: round
+  joins: round
+  angles: [0, 45, 90]
+  detail: low
+  minGap: 2
+  badge: { position: bottom-right, size: 8, gap: 2 }
+  duotoneOpacity: 0.4

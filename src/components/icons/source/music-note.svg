@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" data-aliases="track song" data-waive-angle="the beam of a note is drawn at a gentle slope">
+  <path d="M9 18.25V5.75l11.75-2.5v12.5"/>
+  <circle cx="6" cy="18.25" r="3"/>
+  <circle cx="17.75" cy="15.75" r="3"/>
+  <circle cx="6" cy="18.25" r="3" data-role="silhouette"/>
+  <circle cx="17.75" cy="15.75" r="3" data-role="silhouette"/>
+</svg>

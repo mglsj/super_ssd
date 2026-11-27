@@ -1,0 +1,267 @@
+---
+title: "Recursion, BST & AVL Trees"
+description: "Recursion, binary search trees, why sorted input breaks them, and AVL rotations."
+part: python
+order: 5
+---
+import { Callout, Fold, Mermaid, Flashcards, Quiz } from '@/components/notes';
+
+<Callout type="tip" title="TL;DR">
+
+- **BST:** every key on the left is smaller, every key on the right is bigger (whole subtrees!).
+- **Sorted input** turns a BST into a linked list: search drops to O(n).
+- **AVL** keeps every balance factor in −1, 0, +1 using rotations, so height stays O(log n).
+
+</Callout>
+
+## Recursion in one picture
+
+- **Base case** stops. **Recursive case** calls itself on a *smaller* input.
+- Each call gets its own **stack frame**, so state survives while it unwinds.
+
+```python
+def fact(n):
+    if n == 0:               # base case
+        return 1
+    return n * fact(n - 1)   # smaller input
+```
+
+<Mermaid code={`flowchart TD
+  a["fact(3) = 3 * fact(2)"] --> b["fact(2) = 2 * fact(1)"]
+  b --> c["fact(1) = 1 * fact(0)"]
+  c --> d["fact(0) = 1  base case"]
+  d -. "returns 1" .-> c
+  c -. "returns 1" .-> b
+  b -. "returns 2" .-> a
+  a -. "returns 6" .-> e(["result 6"])`} />
+
+<Callout type="note" title="Why?">
+Recursion is proved by **induction**: base case = base step, "assume it works for n−1" = inductive hypothesis.
+</Callout>
+
+## Why trees? Cheap ordered inserts
+
+| Structure | Search | Insert / delete |
+|---|---|---|
+| sorted list | O(log n) binary search | **O(n)**: elements shift right |
+| balanced BST | O(log n) | **O(log n)**: relink one node |
+
+- Insert 18 into `[3, 8, 15, 20, 31, 42, 57]`: **20, 31, 42, 57 all shift**.
+- In a BST: walk `20 → 8 → 15`, attach 18 as **right child** of 15. Nothing moves.
+- BSTs underpin **AVL, red-black and B-trees** (databases, file systems).
+
+## The BST property (and its trap)
+
+For **every** node: *all* keys in the left subtree are smaller, *all* keys in the right subtree are larger.
+
+<Mermaid code={`flowchart TD
+  r50((50)) --> r30((30))
+  r50 --> r70((70))
+  r30 --> r20((20))
+  r30 --> r40((40))`} />
+
+<Callout type="warning" title="The 6-under-5 trap">
+Tree `5 → (2 → (1, 6), 8)`: every parent-child pair looks fine, but **6 sits in the left subtree of 5** and 6 > 5. Not a BST!
+</Callout>
+
+<Mermaid code={`flowchart TD
+  n5((5)) --> n2((2))
+  n5 --> n8((8))
+  n2 --> n1((1))
+  n2 --> n6((6))
+  style n6 fill:#3a1d22,stroke:#f3727f`} />
+
+A correct checker passes down an **open interval `(lo, hi)`**, not just "compare with parent".
+
+## Insert & search (dict nodes)
+
+A node is a dict: `{"key": k, "left": None, "right": None}`.
+
+```python
+def insert(root, key):
+    if root is None:                      # empty spot found
+        return make_node(key)
+    if key < root["key"]:
+        root["left"] = insert(root["left"], key)
+    elif key > root["key"]:
+        root["right"] = insert(root["right"], key)
+    return root                           # hand subtree back up
+```
+
+- Each frame **reattaches its child** on the way back up.
+- Duplicates are ignored, so keys stay **distinct**.
+
+<Fold title="Search: recursive and iterative (homework)">
+
+```python
+def search_rec(root, key):
+    if root is None:       return False
+    if key == root["key"]: return True
+    side = "left" if key < root["key"] else "right"
+    return search_rec(root[side], key)
+
+def search_iter(root, key):
+    while root is not None:
+        if key == root["key"]: return True
+        root = root["left"] if key < root["key"] else root["right"]
+    return False
+```
+
+Trace: inserting 40 into the tree from (10, 50, 30, 70, 20) goes right at 10, left at 50, right at 30, then `insert(None)` creates the node.
+
+</Fold>
+
+## Sorted input = sad linked list
+
+Insert `10, 20, 30, 40, 50` in order:
+
+<Mermaid code={`flowchart LR
+  a((10)) --> b((20)) --> c((30)) --> d((40)) --> e((50))`} />
+
+| Tree shape | Height | Search |
+|---|---|---|
+| balanced | ≈ log₂ n | O(log n) |
+| **degenerate** (sorted input) | n | **O(n)** |
+
+A million sorted user IDs means **a million steps** per lookup.
+
+## AVL: balance factor & invariants
+
+**Balance factor** `bf = height(left) − height(right)`. Leaf height = 1, empty = 0.
+
+An **AVL tree** is a BST where every node has bf ∈ −1, 0, +1. Three invariants (Lab 08):
+
+1. **BST order** over whole subtrees (keys distinct).
+2. **Heights right:** `h = 1 + max(h(left), h(right))`.
+3. **Balance:** `|h(left) − h(right)| ≤ 1` at every node.
+
+<Callout type="tip" title="Remember">
+Height < 1.4405 · log₂(n+2) − 0.3277, so search is **guaranteed O(log n)**.
+</Callout>
+
+<Fold title="Smallest AVL tree of height h">
+
+`N(h) = N(h−1) + N(h−2) + 1`, with `N(0) = 0`, `N(1) = 1`.
+
+Sequence: **0, 1, 2, 4, 7, 12, 20, …**
+
+Root + minimal subtree of height h−1 + minimal subtree of height h−2. Fibonacci-like growth is **why the height is logarithmic**.
+
+</Fold>
+
+## Right rotation
+
+After insert/delete, walk back up, recompute heights, fix any node with **bf = ±2**.
+
+<Mermaid code={`flowchart LR
+  subgraph Before["Before: z is +2"]
+    z((z)) --> y((y))
+    z --> T4[T4]
+    y --> x((x))
+    y --> T3[T3]
+  end
+  subgraph After["After rotate_right z"]
+    y2((y)) --> x2((x))
+    y2 --> z2((z))
+    z2 --> T3b[T3]
+    z2 --> T4b[T4]
+  end
+  Before ==> After`} />
+
+```python
+def rotate_right(z):
+    y = z.left
+    z.left = y.right            # T3 moves across
+    y.right = z
+    update_height(z); update_height(y)   # z first: now below y
+    return y                    # new subtree root
+```
+
+- Only **3 references** change. `rotate_left` is the **mirror**.
+- In-order `x … y … T3 … z … T4` is unchanged, so it's **still a BST**.
+
+## The 4 cases + decision chart
+
+The name says where the new key went: **LR** = **R**ight subtree of the **L**eft child.
+
+<Mermaid code={`flowchart TD
+  s{"bf of node"} -->|"+2"| L{"bf of left"}
+  s -->|"−2"| R{"bf of right"}
+  s -->|"−1, 0, +1"| ok["balanced ✓"]
+  L -->|"≥ 0"| LL["LL: rotate right"]
+  L -->|"< 0"| LR["LR: rotate left on left, then right"]
+  R -->|"≤ 0"| RR["RR: rotate left"]
+  R -->|"> 0"| RL["RL: rotate right on right, then left"]`} />
+
+| Case | Smallest example | Fix |
+|---|---|---|
+| **LL** | insert 30, 20, 10 | `rotate_right(z)` |
+| **RR** | insert 10, 20, 30 | `rotate_left(z)` |
+| **LR** | insert 30, 10, 20 | `z.left = rotate_left(z.left)`, then `rotate_right(z)` |
+| **RL** | insert 10, 30, 20 | `z.right = rotate_right(z.right)`, then `rotate_left(z)` |
+
+All four end as `20 → (10, 30)`.
+
+<Callout type="tip" title="Memory hook">
+**Same letters = one spin, mixed letters = two spins.** LL/RR single, LR/RL double.
+</Callout>
+
+<Callout type="important" title="Exam">
+**Insert**: at most one single or double rotation. **Delete**: may rotate at every level; a node with two children is replaced by its **in-order successor** (smallest key in right subtree).
+</Callout>
+
+## check_avl: trust nothing
+
+Recursively return **(real height, node count)** and raise on any violation:
+
+- Key must lie in the **open interval `(lo, hi)`**; pass `(lo, key)` left, `(key, hi)` right.
+- `|hl − hr| > 1` means **unbalanced**.
+- Stored `node.height` must equal `1 + max(hl, hr)`.
+- Wrapper returns `True`/`False`, never raises, and checks **count == tree.size** (Lab 08 Task 5).
+
+<Callout type="warning" title="Trap">
+**Don't trust stored heights.** Compute the real ones and compare.
+</Callout>
+
+<Fold title="Full checker code">
+
+```python
+def check(node, lo=None, hi=None):
+    """Return (height, count) or raise. lo/hi = open interval."""
+    if node is None:
+        return 0, 0
+    if (lo is not None and not lo < node.key) or (hi is not None and not node.key < hi):
+        raise ValueError("BST order")
+    hl, cl = check(node.left, lo, node.key)
+    hr, cr = check(node.right, node.key, hi)
+    if abs(hl - hr) > 1:         raise ValueError("unbalanced")
+    h = 1 + max(hl, hr)
+    if node.height != h:         raise ValueError("wrong stored height")
+    return h, cl + cr + 1
+```
+
+</Fold>
+
+## Replay it
+
+<Flashcards cards={[
+  { q: "Two parts of every recursive function?", a: "A **base case** and a **recursive case** on a smaller input." },
+  { q: "BST property?", a: "For every node, **all** left-subtree keys are smaller and **all** right-subtree keys larger." },
+  { q: "Why is `5 → (2 → (1, 6), 8)` not a BST?", a: "6 is in the **left subtree of 5** but 6 > 5." },
+  { q: "Height of a BST built from sorted input?", a: "**n**: it degenerates into a linked list, search O(n)." },
+  { q: "Balance factor?", a: "`height(left) − height(right)`; AVL needs −1, 0 or +1." },
+  { q: "Minimum nodes of an AVL tree of height h?", a: "`N(h) = N(h−1) + N(h−2) + 1`: 0, 1, 2, 4, 7, 12, 20…" },
+  { q: "Fix for the LR case?", a: "`rotate_left(z.left)`, then `rotate_right(z)`." },
+  { q: "How many references does a rotation change?", a: "**Three**, and in-order order is preserved." },
+  { q: "Replacement when deleting a node with two children?", a: "Its **in-order successor**: smallest key in the right subtree." },
+]} />
+
+<Quiz questions={[
+  { q: "Inserting `10, 20, 30` into an empty AVL tree triggers which case?", options: ["LL", "RR", "LR", "RL"], answer: 1, why: "Each key goes right of the right child: **RR**, fixed by `rotate_left`." },
+  { q: "bf(z) = +2 and bf(z.left) = −1. Fix?", options: ["`rotate_right(z)`", "`rotate_left(z)`", "rotate left on `z.left`, then right on `z`", "rotate right on `z.right`, then left on `z`"], answer: 2, why: "Left-heavy with a right-heavy left child is **LR**: a double rotation." },
+  { q: "Why should a BST checker pass down `(lo, hi)`?", options: ["It's faster", "Parent-only checks miss violations deeper in subtrees", "To compute heights"], answer: 1, why: "The 6-under-5 trap passes every parent-child check." },
+  { q: "Which are AVL invariants?", options: ["BST order", "Stored heights are correct", "Every node has two children", "Balance factor in −1..1"], answer: [0, 1, 3], why: "AVL trees can have nodes with one child." },
+  { q: "Search in a degenerate BST of n nodes is…", options: ["O(1)", "O(log n)", "O(n)", "O(n log n)"], answer: 2, why: "The height is n, so you may walk every node." },
+]} />
+
+<p class="sources">Sources: lec 7 - recursion, bst, avl tree.ipynb, lab08_assignment.pdf</p>

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" data-aliases="loop invariant repeat">
+  <path d="M19.36 16.25A8.5 8.5 0 1 1 18.01 5.99L20.5 8.5"/>
+  <path d="M20.5 3.5v5h-5"/>
+  <circle cx="12" cy="12" r="8.5" data-role="silhouette"/>
+</svg>

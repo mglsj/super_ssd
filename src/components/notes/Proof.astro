@@ -1,0 +1,25 @@
+---
+/**
+ * Annotated proof outline: assertions, code and justifications on separate lines.
+ * lines: [{ a: "{ x = X }" }, { c: "y := 1", j: "Assign" }, { i: "{ I }", j: "invariant" }]
+ *   a = assertion · c = code · i = invariant · j = justification (why this step holds)
+ */
+type Line = { a?: string; c?: string; i?: string; j?: string; indent?: number };
+interface Props {
+  lines: Line[];
+}
+const { lines } = Astro.props;
+---
+
+<div class="proof" role="figure" aria-label="Proof outline">
+  {
+    lines.map((l) => (
+      <div class="proof-line" style={`--indent:${l.indent ?? 0}`}>
+        {l.a && <span class="pa">{l.a}</span>}
+        {l.c && <span class="pc">{l.c}</span>}
+        {l.i && <span class="pi">{l.i}</span>}
+        {l.j && <span class="pj">← {l.j}</span>}
+      </div>
+    ))
+  }
+</div>

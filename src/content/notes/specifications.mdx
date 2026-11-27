@@ -1,0 +1,193 @@
+---
+title: "Specifications & Assertions"
+description: "Testing vs proof, pre/postconditions as asserts, ghost variables, weak vs strong specs."
+part: reasoning
+order: 1
+---
+import { Callout, Fold, Mermaid, Flashcards, Quiz } from '@/components/notes';
+
+<Callout type="tip" title="TL;DR">
+
+- **Tests** check some inputs; a **proof** covers all of them.
+- A spec = **precondition** (caller's job) + **postcondition** (code's job), written as `assert`.
+- A **strong** spec rules out every wrong answer; a weak one lets bugs slip through.
+
+</Callout>
+
+## Testing vs proof
+
+> Testing shows the **presence** of bugs, never their **absence**. (after Dijkstra)
+
+| | Testing | Proof |
+|---|---|---|
+| Semantics | intuitive | **exact** (formal) |
+| Assurance | partial: only inputs you tried | **mathematical**: all inputs |
+| Analogy | measure a few triangles | prove △ACH ∼ △CBH ∼ △ABC once |
+
+<Mermaid code={`flowchart LR
+  R[Requirements] --> D[Design] --> I[Implement] --> T{{TESTS}} --> P[Deploy] --> R`} />
+
+<Callout type="tip" title="Remember">
+The fix is a **formal foundation**: formal semantics + tools to reason about programs, i.e. Hoare-style `{P} C {Q}`.
+</Callout>
+
+## Where Python sits
+
+<Mermaid code={`quadrantChart
+  title Verification-aware languages
+  x-axis Low entry barrier --> High entry barrier
+  y-axis Low verification --> High verification
+  quadrant-1 Proof assistants
+  quadrant-2 Hoare logic plus SMT
+  quadrant-3 Run-time checks
+  quadrant-4 Strong static types
+  Python: [0.12, 0.15]
+  C: [0.28, 0.08]
+  Haskell: [0.5, 0.35]
+  Rust: [0.62, 0.42]
+  Dafny: [0.42, 0.68]
+  Fstar: [0.62, 0.76]
+  Lean: [0.85, 0.9]`} />
+
+- Python only has **run-time checks** (`assert`).
+- So we write with `assert` the same specs a Hoare tool would **prove**.
+- Top right: **Curry–Howard**, types as specs, programs as proofs.
+
+## A spec is a contract
+
+<Mermaid code={`flowchart LR
+  C["Caller"] -->|"makes PRE true"| F["function"] -->|"guarantees POST"| R["Result"]`} />
+
+- **Precondition:** must hold *before*. The **caller's** obligation.
+- **Postcondition:** holds *after*. The **implementer's** obligation.
+- In Python: both are **`assert`** statements.
+
+## Swap: naive asserts break
+
+```python
+def swap_temp(x, y):
+    temp = x
+    x = y
+    y = temp
+    return x, y
+```
+
+Assert after each line, naively:
+
+```python
+temp = x;  assert temp == x                  # ok
+x = y;     assert temp == x and x == y       # FAILS: x overwritten
+```
+
+<Callout type="warning" title="Trap">
+After `x = y`, `temp == x` is **stale**. Assertions only see the **current** state.
+</Callout>
+
+## Ghost variables to the rescue
+
+To say "x and y were exchanged" you need the **original** values. Snapshot them in **ghost variables**: used only for reasoning, never for the result.
+
+```python
+x_orig, y_orig = x, y                         # ghosts
+temp = x;  assert temp == x_orig
+x = y;     assert temp == x_orig and x == y_orig
+y = temp;  assert y == temp and temp == x_orig and x == y_orig
+assert x == y_orig and y == x_orig, "Swap failed!"   # POST
+```
+
+<Mermaid code={`flowchart TB
+  A["x = a, y = b"] -->|"temp = x"| B["temp = a, y = b"]
+  B -->|"x = y"| C["temp = a, x = b"]
+  C -->|"y = temp"| D["x = b, y = a ✓"]`} />
+
+<Callout type="tip" title="Memory hook">
+**Ghosts remember the past** so your asserts can talk about it.
+</Callout>
+
+## Specs catch bugs
+
+- Delete `x = y` and the post `x == y_orig` **fails instantly**.
+- The middle asserts are exactly the **midconditions** of a Hoare proof of `{x = a ∧ y = b} swap {x = b ∧ y = a}`.
+
+| Risky swap | Breaks when |
+|---|---|
+| `x = x + y; y = x - y; x = x - y` | **floats** lose precision; **str** fails |
+| `x = x * y; y = x / y; x = x / y` | **y == 0** (ZeroDivisionError), float rounding |
+
+<Callout type="tip" title="Remember">
+A **correct spec** helps you **detect buggy code**: the ghost-variable post shows exactly which inputs break a swap.
+</Callout>
+
+## max_of_three: weak vs strong
+
+```python
+def max_of_three(a, b, c):
+    if a >= b:
+        result = a if a >= c else c
+    else:
+        result = b if b >= c else c
+    return result
+```
+
+| Spec | Assertion | Accepts bug `result = 100`? |
+|---|---|---|
+| **Weak** | `result >= a and result >= b and result >= c` | **Yes**: for (20, 30, 10) anything ≥ 30 passes |
+| **Strong** | weak **and** `result == a or result == b or result == c` | **No**: only 30 passes |
+
+<Mermaid code={`flowchart LR
+  W["weak: 30, 31, ..., 100 all OK"] -->|"add: result is one of a, b, c"| S["strong: only 30"]`} />
+
+<Callout type="important" title="Exam">
+**Upper bound + attained** together *define* max. Same pair returns as **∀ and ∃** in the `find_max` loop invariant.
+</Callout>
+
+<Fold title="Decision tree of max_of_three">
+
+<Mermaid code={`flowchart TD
+  q1{"a ≥ b?"} -- T --> q2{"a ≥ c?"}
+  q1 -- F --> q3{"b ≥ c?"}
+  q2 -- T --> ra["result = a"]
+  q2 -- F --> rc1["result = c"]
+  q3 -- T --> rb["result = b"]
+  q3 -- F --> rc2["result = c"]`} />
+
+The strong spec fails with `AssertionError: Result not among inputs!` on the buggy version.
+
+</Fold>
+
+## The spec–implementation continuum
+
+| Pure specification (WHAT) | Pure implementation (HOW) |
+|---|---|
+| mathematical properties | algorithmic steps |
+| declarative | imperative |
+| external observations | internal computation |
+
+- **Sweet spot:** near the spec end, describe **external properties**.
+- `max_of_three`: "≥ every input **and** one of them". No *how*.
+
+<Callout type="warning" title="Trap">
+If your post just **re-runs the algorithm**, it shares the algorithm's bugs.
+</Callout>
+
+## Replay it
+
+<Flashcards cards={[
+  { q: "What can testing never show?", a: "The **absence** of bugs." },
+  { q: "Precondition is whose job?", a: "The **caller's**." },
+  { q: "Postcondition is whose job?", a: "The **implementer's** (the code)." },
+  { q: "What is a ghost variable?", a: "A snapshot like `x_orig` used **only for reasoning**, never affecting the result." },
+  { q: "Why does `assert temp == x` fail after `x = y`?", a: "x was **overwritten**; asserts see only the current state." },
+  { q: "Weak spec for max_of_three?", a: "`result` ≥ a, b and c (upper bound only)." },
+  { q: "What makes it strong?", a: "Also `result` **equals one of** a, b, c (attained)." },
+  { q: "Where is the spec sweet spot?", a: "Near the **WHAT** end: external properties, not algorithm steps." },
+]} />
+
+<Quiz questions={[
+  { q: "Which spec rejects `return 100` for `max_of_three(20, 30, 10)`?", options: ["`result >= a and result >= b and result >= c`", "upper bound **and** `result in (a, b, c)`", "`result > 0`"], answer: 1, why: "Only the strong spec requires the result to be one of the inputs." },
+  { q: "The arithmetic swap `x = x + y; y = x - y; x = x - y` fails for…", options: ["small ints", "strings", "floats with rounding"], answer: [1, 2], why: "Strings can't be subtracted; floats lose precision." },
+  { q: "Python's place in verification support is…", options: ["proof assistant", "Hoare logic + SMT", "run-time checks", "strong static types"], answer: 2, why: "Python only offers `assert` at run time." },
+  { q: "A postcondition that copies the algorithm is bad because…", options: ["it's slow", "it shares the algorithm's bugs", "Python forbids it"], answer: 1, why: "It describes HOW, not WHAT, so a wrong algorithm passes its own check." },
+]} />
+
+<p class="sources">Sources: lec 2 Jupyter Notebook.ipynb, 13 Nov slides</p>

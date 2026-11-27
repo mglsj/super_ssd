@@ -1,0 +1,222 @@
+---
+title: "Past Paper: Q2–Q5 Solved"
+description: "Worked answers to Q2–Q5 (induction, Hoare rules, swap, factorial) plus marking hints."
+part: exam
+order: 1
+---
+import { Callout, Fold, Rules, Rule, Proof, Mermaid, Flashcards, Quiz } from '@/components/notes';
+
+<Callout type="tip" title="TL;DR">
+
+- **Q2 = C:** induction proves `∀n. P(n)` from `P(0)` and `∀k. P(k) → P(k+1)`.
+- **Q3 = A, D, F:** only strengthen the pre or weaken the post.
+- **Q4/Q5:** Assign backwards, glue with Seq, invariant `y · x! = X!` for factorial.
+
+</Callout>
+
+<Callout type="tip" title="Scope: only Q2–Q5 are in syllabus">
+Q1 and Q6–Q9 (threads, execution graphs, memory models, mutual exclusion, Peterson) belong to another course. Skip them. The paper says *assume standard Hoare-logic axioms and rules*, and **partial credit is given for correct reasoning**.
+</Callout>
+
+## Q2: Induction basics
+
+*[2 marks]* `P : ℕ → Prop`. S1: `P(0)`. S2: `P(k) → P(k+1)`. S3: `P(n)`. S4: `∀n ∈ ℕ, P(n)`.
+
+| Option | Verdict | Why |
+|---|---|---|
+| A. proves S3 from S1, S2 | ✗ | S3 is an **open** formula; S2 must hold for every k |
+| B. proves `∀n, S3` from S1, S2 | ✗ | right conclusion, but the step needs **∀k** |
+| **C. proves S4 from S1 and `∀k ∈ ℕ, S2`** | ✓ | exactly the **induction principle** |
+| D. None of the above | ✗ | C is correct |
+
+<Rules>
+  <Rule name="Induction" premises={["S1: P(0)", "∀k ∈ ℕ. S2"]} conclusion="S4: ∀n ∈ ℕ. P(n)" />
+</Rules>
+
+<Callout type="important" title="Exam">
+**Answer: C.** More in <a href={`${import.meta.env.BASE_URL}induction/`}>Induction</a>.
+</Callout>
+
+## Q3: Which Cons moves are legal?
+
+*[3 marks]* Only **strengthen the pre** (new pre ⇒ old pre) or **weaken the post** (old post ⇒ new post).
+
+<Mermaid code={`flowchart LR
+  Rp["R new pre"] ==>|"must imply"| P["P old pre"]
+  P --> S["S"] --> Q["Q old post"]
+  Q ==>|"must imply"| Rq["R new post"]`} />
+
+| | Statement | ✓/✗ | Reason |
+|---|---|---|---|
+| A | `{P}S{Q}`, `Q → R` ⊢ `{P}S{R}` | ✓ | **weaken** post |
+| B | `{P}S{Q}`, `R → P` ⊢ `{P}S{R}` | ✗ | nothing says `Q ⇒ R` |
+| C | `{P}S{Q}`, `P → R` ⊢ `{R}S{Q}` | ✗ | **weakens** the pre |
+| D | `{P}S{Q}`, `R → P` ⊢ `{R}S{Q}` | ✓ | **strengthen** pre |
+| E | `{P}S{Q}`, `R → Q` ⊢ `{P}S{R}` | ✗ | **strengthens** the post |
+| F | `{P}S₁{Q₁}`, `Q₁ → Q₂`, `{Q₂}S₂{Q}` ⊢ `{P}S₁;S₂{Q}` | ✓ | Cons, then **Seq** |
+
+**Answer: A, D, F.**
+
+<Fold title="Counterexamples for B, C, E (write them for partial credit)">
+
+- **C:** `{x = 1} y = x {y = 1}` is valid. Take R ≡ True (P → True). Then `{True} y = x {y = 1}` is false (try x = 2).
+- **E:** `{True} x = 5 {x > 0}` is valid. Take R ≡ `x > 10` (R → Q). Then `{True} x = 5 {x > 10}` is false.
+- **B:** `{x = 1} y = 2 {y = 2}` is valid. Take R ≡ `x = 1 ∧ y = 7`, so R → P. Then `{x = 1} y = 2 {x = 1 ∧ y = 7}` is false.
+
+Derivation tree for **F**:
+
+<Rules>
+  <Rule name="Cons" premises={["P ⇒ P", "{P} S₁ {Q₁}", "Q₁ ⇒ Q₂"]} conclusion="{P} S₁ {Q₂}" />
+  <Rule name="Seq" premises={["{P} S₁ {Q₂}", "{Q₂} S₂ {Q}"]} conclusion="{P} S₁; S₂ {Q}" />
+</Rules>
+
+</Fold>
+
+## Q4: Swap verification
+
+*[3 marks]* `S ≡ t := x; x := y; y := t`. X, Y are **ghost variables** for the start values.
+
+Spec: `{x = X ∧ y = Y}  t := x; x := y; y := t  {x = Y ∧ y = X}`
+
+<Proof lines={[
+  { a: "{ x = X ∧ y = Y }" },
+  { a: "⇔ { y = Y ∧ x = X }", j: "Cons: ∧ commutes (logically identical)" },
+  { c: "t := x", j: "Assign: t ↦ x" },
+  { a: "{ y = Y ∧ t = X }" },
+  { c: "x := y", j: "Assign: x ↦ y" },
+  { a: "{ x = Y ∧ t = X }" },
+  { c: "y := t", j: "Assign: y ↦ t" },
+  { a: "{ x = Y ∧ y = X }", j: "post Q" },
+]} />
+
+- **Assign** ×3, working bottom → top.
+- **Seq** twice glues them: `{y = Y ∧ x = X} S {x = Y ∧ y = X}`.
+- **Cons** swaps the conjuncts to match the given pre. ∎
+
+<Callout type="important" title="Marking">
+About **+1 per correct midcondition**: `{x = X, y = Y}`, `{y = Y, t = X}`, `{x = Y, t = X}` and the final `{x = Y, y = X}`.
+</Callout>
+
+## Q5: Spec + the invariant
+
+*[4 marks]*
+
+```text
+y := 1;
+while (x != 0) {
+    y := y * x;
+    x := x - 1;
+}
+```
+
+- **Spec:** `{x = X ∧ X ≥ 0}  S  {y = X!}`. Need **X ≥ 0**: factorial lives on ℕ.
+- **Invariant:** `I ≡ y · x! = X! ∧ x ≥ 0`
+- **Idea:** y = factors **done**, x! = factors **left**. Product is always X!.
+
+| step | x | y | y · x! |
+|---|---|---|---|
+| start (X = 4) | 4 | 1 | 1·24 = 24 |
+| 1 | 3 | 4 | 4·6 = 24 |
+| 2 | 2 | 12 | 12·2 = 24 |
+| 3 | 1 | 24 | 24·1 = 24 |
+| exit | 0 | 24 | 24·1 = 24 ✓ |
+
+<Callout type="note" title="Why?">
+With x < 0 the loop never ends (allowed by partial correctness), but I mentions x!, so we keep **x ≥ 0**.
+</Callout>
+
+## Q5 (2): Initialization
+
+Show `{x = X ∧ X ≥ 0} y := 1 {I}`.
+
+<Proof lines={[
+  { a: "{ x = X ∧ X ≥ 0 }" },
+  { a: "⇒ { 1 · x! = X! ∧ x ≥ 0 }", j: "Cons: x = X gives x! = X!, and x = X ≥ 0" },
+  { c: "y := 1", j: "Assign: I[y ↦ 1]" },
+  { i: "{ y · x! = X! ∧ x ≥ 0 } = I" },
+]} />
+
+<Callout type="tip" title="Remember">
+Same trick every time: compute `I[y ↦ 1]` **backwards**, then use **Cons** to bridge from the given pre.
+</Callout>
+
+## Q5 (3): Preservation
+
+Show `{I ∧ x ≠ 0} y := y*x; x := x−1 {I}`. Work **backwards** from I.
+
+<Proof lines={[
+  { a: "{ I ∧ x ≠ 0 } = { y · x! = X! ∧ x ≥ 0 ∧ x ≠ 0 }" },
+  { a: "⇒ { (y·x) · (x−1)! = X! ∧ x−1 ≥ 0 }", j: "Cons: x ≥ 0 ∧ x ≠ 0 ⇒ x ≥ 1, and x·(x−1)! = x! for x ≥ 1" },
+  { c: "y := y * x", j: "Assign: y ↦ y·x" },
+  { a: "{ y · (x−1)! = X! ∧ x−1 ≥ 0 }" },
+  { c: "x := x - 1", j: "Assign: x ↦ x−1 into I" },
+  { i: "{ y · x! = X! ∧ x ≥ 0 } = I" },
+]} />
+
+- **Seq** gives `{I ∧ x ≠ 0} body {I}`.
+- **While** then gives `{I} while (x ≠ 0) {…} {I ∧ x = 0}`.
+
+## Q5 (4): Exit ⇒ post
+
+<Proof lines={[
+  { a: "{ I ∧ ¬(x ≠ 0) } = { y · x! = X! ∧ x ≥ 0 ∧ x = 0 }" },
+  { a: "⇒ { y · 0! = X! } ⇒ { y · 1 = X! } ⇒ { y = X! }", j: "Cons: 0! = 1" },
+]} />
+
+<Callout type="important" title="Where marks go">
+**+1** invariant, **+1** init, **+1** preservation, **+1** exit. Teacher wrote I as `x! · y = X!` (same thing). **Name the rule** at every step.
+</Callout>
+
+## Q5: Putting it together
+
+<Mermaid code={`flowchart TB
+  Pre["{x = X ∧ X ≥ 0}"] -->|"y := 1 · init"| I["{I}"]
+  I --> B{"x ≠ 0 ?"}
+  B -- "yes: {I ∧ x≠0}" --> Body["y := y*x; x := x−1"]
+  Body -->|"preservation"| I
+  B -- "no: {I ∧ x=0}" --> Post["exit ⇒ {y = X!}"]`} />
+
+**Seq** on init + the While triple, then **Cons** with exit, gives `{x = X ∧ X ≥ 0} S {y = X!}`. ∎
+
+<Fold title="Bonus: total correctness?">
+
+The variant `x` is a natural number that drops by 1 each iteration, so the loop terminates when X ≥ 0. That upgrades it to `[x = X ∧ X ≥ 0] S [y = X!]`. The question only asks for partial correctness.
+
+</Fold>
+
+<Fold title="Practice drills">
+
+**Drill 1:** weakest pre of `x := x + y; y := x − y` for `{y = A}`?
+Backwards: `Q[y ↦ x − y]` gives `x − y = A`. Then `x ↦ x + y` gives `(x + y) − y = A`, i.e. **x = A**.
+
+**Drill 2:** invariant for `i := 0; s := 0; while i < n: i := i+1; s := s + i` with post `{s = n(n+1)/2}`?
+**I ≡ s = i(i+1)/2 ∧ 0 ≤ i ≤ n** (given n ≥ 0). Init: 0 = 0. Preservation: s + (i+1) = (i+1)(i+2)/2. Exit: i ≥ n ∧ i ≤ n ⇒ i = n.
+
+**Drill 3:** is `{x > 0} x := x − 1 {x ≥ 0}` valid?
+Assign gives `{x − 1 ≥ 0} x := x − 1 {x ≥ 0}`. Over ℤ, x > 0 ⇒ x ≥ 1 ⇒ x − 1 ≥ 0, so **Cons** makes it valid ✓.
+
+</Fold>
+
+## Replay it
+
+<Flashcards cards={[
+  { q: "Q2 answer?", a: "**C**: S4 from S1 and `∀k ∈ ℕ, S2`." },
+  { q: "Q3 answer?", a: "**A, D, F**." },
+  { q: "Legal Cons moves?", a: "**Strengthen** the pre, **weaken** the post." },
+  { q: "Swap spec?", a: "`{x = X ∧ y = Y} t := x; x := y; y := t {x = Y ∧ y = X}`" },
+  { q: "Midcondition before `y := t` in the swap?", a: "`{x = Y ∧ t = X}`" },
+  { q: "Factorial invariant?", a: "`y · x! = X! ∧ x ≥ 0`" },
+  { q: "Key Cons fact in preservation?", a: "`x ≥ 0 ∧ x ≠ 0 ⇒ x ≥ 1`, and `x·(x−1)! = x!`." },
+  { q: "Exit step for factorial?", a: "`x = 0`, so `y · 0! = y · 1 = X!`." },
+  { q: "Q5 marks split?", a: "+1 each: **invariant, init, preservation, exit**." },
+]} />
+
+<Quiz questions={[
+  { q: "Why is Q3 option C wrong?", options: ["It strengthens the pre", "It weakens the pre", "It weakens the post", "It needs Seq"], answer: 1, why: "`P → R` means R allows more states, where S may fail. Counterexample: R ≡ True." },
+  { q: "Which Q3 options are correct?", options: ["A", "B", "C", "D", "E", "F"], answer: [0, 3, 5], why: "A weakens the post, D strengthens the pre, F is Cons then Seq." },
+  { q: "Weakest pre of `x := x + y; y := x − y` for `{y = A}`?", options: ["`y = A`", "`x = A`", "`x − y = A`", "`x + y = A`"], answer: 1, why: "`(x + y) − y = A` simplifies to `x = A`." },
+  { q: "Pre after `Assign` for `y := 1` with post I (factorial)?", options: ["`y · x! = X!`", "`1 · x! = X! ∧ x ≥ 0`", "`x = X`", "`y = 1`"], answer: 1, why: "Substitute `y ↦ 1` into `I`." },
+  { q: "Is `{x > 0} x := x − 1 {x ≥ 0}` valid?", options: ["Yes, by Assign + Cons", "No, x could be 0", "Only for total correctness"], answer: 0, why: "Over ℤ, `x > 0 ⇒ x − 1 ≥ 0`, so strengthen the pre." },
+]} />
+
+<p class="sources">Sources: CS6.303 Endsems.pdf (Q2–Q5 only)</p>

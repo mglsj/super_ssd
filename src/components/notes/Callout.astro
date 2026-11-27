@@ -1,0 +1,24 @@
+---
+/**
+ * A highlighted note in the text, built on the Starwind Alert.
+ * <Callout type="tip|note|important|warning|caution" title="TL;DR"> …markdown… </Callout>
+ */
+import { Alert, AlertTitle, AlertDescription } from '@/components/starwind/alert';
+
+type Type = 'note' | 'tip' | 'important' | 'warning' | 'caution';
+interface Props {
+  type?: Type;
+  title?: string;
+}
+const { type = 'note', title } = Astro.props;
+
+const variant = { note: 'info', tip: 'success', important: 'primary', warning: 'warning', caution: 'error' } as const;
+const fallback = { note: 'Note', tip: 'Tip', important: 'Important', warning: 'Warning', caution: 'Caution' };
+---
+
+<Alert variant={variant[type]} class="callout" data-callout={type}>
+  <AlertTitle class="callout-title">{title ?? fallback[type]}</AlertTitle>
+  <AlertDescription class="callout-body prose-body">
+    <slot />
+  </AlertDescription>
+</Alert>

@@ -1,0 +1,50 @@
+{
+  "version": 2,
+  "skills": {
+    "draw-icons": {
+      "source": "ronykax/skills",
+      "commit": "4b64f8f38b381441d3cb3eb437efebcffff52f80",
+      "sourceType": "github",
+      "skillPath": "skills/draw-icons/SKILL.md",
+      "computedHash": "eb41cea04629c82a7353492e8397fac601553eab96c2fcae519c7b5955e960c6",
+      "installMode": "copy"
+    },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "83485963700bcf11d5bf78118facb301676b69d918fee2e45a95e7f1a2840f6c",
+      "installMode": "copy"
+    },
+    "starwind-ui": {
+      "source": "starwind-ui/skills",
+      "commit": "8a94efac695650512e485cb9d061b9e47eab61dc",
+      "sourceType": "github",
+      "skillPath": "skills/starwind-ui/SKILL.md",
+      "computedHash": "eeea04198489e5d7a8f4f35c86acfa5c98bc593822d65a20279b18bb31ef11ce",
+      "installMode": "copy"
+    },
+    "svelte-code-writer": {
+      "source": "sveltejs/ai-tools",
+      "commit": "5c3ad9bac30f332e3e539d0a36a2c7822c44def2",
+      "sourceType": "github",
+      "skillPath": "tools/skills/svelte-code-writer/SKILL.md",
+      "computedHash": "8eccb2e23091d482aeaca1c95db6c5aa34d055ac2d0c9797efbbecbe5a8e4fd0"
+    },
+    "svelte-core-bestpractices": {
+      "source": "sveltejs/ai-tools",
+      "commit": "5c3ad9bac30f332e3e539d0a36a2c7822c44def2",
+      "sourceType": "github",
+      "skillPath": "tools/skills/svelte-core-bestpractices/SKILL.md",
+      "computedHash": "32070b91f54f92dba3f6e1739d82bf944c14e7a4a75cfe609a59bf1117c34338"
+    },
+    "svelte-mcp-feedback": {
+      "source": "sveltejs/ai-tools",
+      "commit": "5c3ad9bac30f332e3e539d0a36a2c7822c44def2",
+      "sourceType": "github",
+      "skillPath": "tools/skills/svelte-mcp-feedback/SKILL.md",
+      "computedHash": "f2b1f2873f394611c8c39567e982523c6dbf9a018125f92a3fb501eeca027248"
+    }
+  }
+}

@@ -1,0 +1,239 @@
+---
+title: "Loop Invariants"
+description: "Reason about loops with init, maintain and exit: find_max, is_sorted, bubble sort."
+part: reasoning
+order: 2
+---
+import { Callout, Fold, Rules, Rule, Proof, Mermaid, Flashcards, Quiz } from '@/components/notes';
+
+<Callout type="tip" title="TL;DR">
+
+- A **loop invariant** is true every time you reach the loop test.
+- Prove 3 things: **init**, **maintain**, **exit** (`P ∧ ¬B ⇒ post`).
+- In Python, check ∀ with **`all(...)`** and ∃ with **`any(...)`**.
+
+</Callout>
+
+## Why loops need an invariant
+
+- `max(max(a, b), c)` works for 3 values, **not for 1000**.
+- A loop runs a **dynamic** number of times, so you can't annotate each pass.
+- Instead: find **one statement** true every time you hit the loop test. That's the **invariant**.
+
+## The three obligations
+
+<Mermaid code={`flowchart TD
+  init["code before loop"] -->|"1 INIT: P holds on entry"| P{{"P holds"}}
+  P --> B{"B ?"}
+  B -- "true: P ∧ B" --> S["loop body S"]
+  S -->|"2 MAINTAIN: P again"| P
+  B -- "false: P ∧ ¬B" --> T["3 EXIT: P ∧ ¬B ⇒ post"]`} />
+
+1. **Init:** P true before the first iteration.
+2. **Maintain:** `{P ∧ B} S {P}`. P may be briefly false *inside* the body.
+3. **Exit:** `P ∧ ¬B` implies the postcondition.
+
+<Rules>
+  <Rule name="While" premises={["{P ∧ B} S {P}"]} conclusion="{P} while B do S {P ∧ ¬B}" note="exactly the 3 obligations" />
+</Rules>
+
+<Callout type="warning" title="Partial correctness">
+The while rule doesn't prove **termination**. Add a **variant**: a natural number like `n − i` that strictly decreases each pass.
+</Callout>
+
+## find_max: the code
+
+```python
+def find_max(numbers):
+    assert len(numbers) > 0                  # precondition
+    max_so_far, i, n = numbers[0], 1, len(numbers)
+    while i < n:
+        if numbers[i] > max_so_far:
+            max_so_far = numbers[i]
+        i = i + 1
+    return max_so_far
+```
+
+**Invariant P:** `max_so_far = max(numbers[0..i−1]) ∧ 1 ≤ i ≤ n`
+
+<Callout type="tip" title="Memory hook">
+Picture a **growing spotlight** on the prefix. On `[1, 5, 6, 3, 4, 8, 9, 2]` it widens one cell per pass; max_so_far is always the brightest so far, ending at **9**.
+</Callout>
+
+## find_max: the proof
+
+| Step | Argument |
+|---|---|
+| **Init** | `i = 1`, `max_so_far = numbers[0]` = max of `numbers[0..0]`; `1 ≤ 1 ≤ n` as list non-empty |
+| **Maintain** | either `numbers[i]` is the new max and we store it, or the old max stays. Then `i` grows, and `i+1 ≤ n` since `i < n` |
+| **Exit** | ¬B gives `i ≥ n`, P gives `i ≤ n`, so **`i = n`** and we have the max of the whole list ✓ |
+
+<Callout type="important" title="Exam">
+The "squeeze" `i ≥ n ∧ i ≤ n ⇒ i = n` is the classic exit step. **Always include the bound** `1 ≤ i ≤ n` in P.
+</Callout>
+
+## ∀ → all, ∃ → any
+
+"max_so_far is the max of the prefix" = two quantified facts:
+
+| Math | Meaning | Python |
+|---|---|---|
+| `∀j < i. max_so_far ≥ numbers[j]` | **upper bound** | `all(...)` |
+| `∃j < i. max_so_far = numbers[j]` | **attained** | `any(...)` |
+
+```python
+while i < n:
+    assert all(max_so_far >= numbers[j] for j in range(i)), "Upper bound violated"
+    assert any(numbers[j] == max_so_far for j in range(i)), "Value not attained"
+    ...
+```
+
+Same pair as the **strong spec** of `max_of_three`!
+
+<Callout type="warning" title="assert on a generator">
+`assert (a[j] <= a[j+1] for j in range(len(a)-1))` **always passes**: a generator object is truthy. Wrap it in **`all(...)`**.
+</Callout>
+
+## for loops & range rules
+
+| | `while` | `for` |
+|---|---|---|
+| iteration | indefinite | **definite** (over a sequence) |
+| index | you manage it | automatic |
+| infinite-loop risk | high | low |
+
+```text
+range(5)        : 0 1 2 3 4
+range(2, 6)     : 2 3 4 5
+range(0, 10, 2) : 0 2 4 6 8
+range(5, 2)     : (empty)
+```
+
+- `stop` is **never included**. Start defaults to 0, step to 1.
+- `for i in range(a, b)` ≈ `i = a; while i < b: …; i += 1`, so **same invariant reasoning**.
+
+## is_sorted
+
+```python
+def is_sorted(numbers):
+    for i in range(len(numbers) - 1):     # last has no right neighbour
+        # INVARIANT: numbers[0..i] has no inversions
+        if numbers[i] > numbers[i + 1]:
+            return False
+    return True
+```
+
+- **Init:** `numbers[0..0]` is one element, so sorted.
+- **Maintain:** no return means `numbers[i] ≤ numbers[i+1]`, so `numbers[0..i+1]` sorted.
+- **Exit:** every **adjacent pair** checked, so the whole list is sorted.
+
+## Bubble sort: two invariants
+
+```python
+for i in range(n):
+    # OUTER: arr[n-i:] = the i largest, sorted
+    swapped = False
+    for j in range(0, n - i - 1):
+        # INNER: arr[j] = max(arr[0..j])
+        if arr[j] > arr[j + 1]:
+            arr[j], arr[j + 1] = arr[j + 1], arr[j]; swapped = True
+    if not swapped: break
+```
+
+<Mermaid code={`flowchart LR
+  U["arr 0 .. n−i−1<br/>unsorted, all ≤ suffix"] --- Sd["arr n−i .. n−1<br/>i largest, sorted ✓"]`} />
+
+- **Inner:** after comparing j, j+1, `arr[j+1]` is the max of `arr[0..j+1]`: the biggest **bubbles right**.
+- **Outer:** after i passes, `is_sorted(arr[n-i:])` and they're the i largest.
+- **Early exit:** no swaps means already sorted.
+
+<Fold title="Trace on [5, 2, 8, 1, 9]">
+
+```text
+pass 1 → [2, 5, 1, 8, 9]   (8 bubbles up; 9 already last)
+pass 2 → [2, 1, 5, 8, 9]
+pass 3 → [1, 2, 5, 8, 9]
+```
+
+</Fold>
+
+## Summation + exercises
+
+<Proof lines={[
+  { a: "{ n ≥ 0 }" },
+  { c: "total = 0; i = 1" },
+  { i: "{ P: total = 1+…+(i−1) ∧ 1 ≤ i ≤ n+1 }", j: "init: empty sum" },
+  { c: "while i <= n:" },
+  { a: "{ P ∧ i ≤ n }", indent: 1 },
+  { c: "total = total + i", indent: 1 },
+  { a: "{ total = 1+…+i ∧ 1 ≤ i ≤ n }", indent: 1 },
+  { c: "i = i + 1", indent: 1 },
+  { i: "{ total = 1+…+(i−1) ∧ 2 ≤ i ≤ n+1 } ⇒ P", indent: 1, j: "restored" },
+  { a: "{ P ∧ i > n } ⇒ i = n+1 ∧ total = 1+…+n", j: "exit" },
+]} />
+
+Try these yourself first: **factorial(n)** and **gcd(a, b)** with checked invariants.
+
+<Fold title="Answer: factorial">
+
+```python
+def factorial(n):
+    assert n >= 0
+    result, i = 1, 1
+    while i <= n:
+        assert result == math.factorial(i - 1) and 1 <= i <= n + 1   # INVARIANT
+        result = result * i
+        i = i + 1
+    assert i == n + 1 and result == math.factorial(n)                # post
+    return result
+```
+
+- **Init:** result = 1 = 0!, i = 1.
+- **Maintain:** (i−1)! · i = i!, then i grows, so result = (i−1)! again.
+- **Exit:** i ≤ n+1 and ¬(i ≤ n) give **i = n+1**, so result = n!.
+- **Variant:** `n + 1 − i` decreases, so it terminates.
+
+</Fold>
+
+<Fold title="Answer: GCD">
+
+```python
+def gcd(a, b):
+    assert a > 0 and b > 0
+    x, y = a, b
+    while y != 0:
+        assert math.gcd(x, y) == math.gcd(a, b) and x > 0 and y >= 0   # INVARIANT
+        x, y = y, x % y
+    assert x == math.gcd(a, b)     # exit: gcd(x, 0) = x
+    return x
+```
+
+- **Key fact:** gcd(x, y) = gcd(y, x mod y), so P is preserved.
+- **Exit:** y = 0 and gcd(x, 0) = x.
+- **Variant:** y strictly decreases, since 0 ≤ x mod y < y.
+
+</Fold>
+
+## Replay it
+
+<Flashcards cards={[
+  { q: "What is a loop invariant?", a: "A statement true **every time** the loop test is reached." },
+  { q: "The 3 obligations?", a: "**Init**, **Maintain** `{P ∧ B} S {P}`, **Exit** `P ∧ ¬B ⇒ post`." },
+  { q: "What proves termination?", a: "A **variant**: a natural number that strictly decreases each pass." },
+  { q: "Invariant of `find_max`?", a: "`max_so_far = max(numbers[0..i−1]) ∧ 1 ≤ i ≤ n`" },
+  { q: "∀ and ∃ in Python?", a: "`all(...)` and `any(...)`." },
+  { q: "Why does `assert (x for x in xs)` always pass?", a: "A **generator object is truthy**. Use `all(...)`." },
+  { q: "Does `range(2, 6)` include 6?", a: "**No**: 2 3 4 5." },
+  { q: "Bubble sort outer invariant?", a: "After i passes, `arr[n-i:]` holds the **i largest, sorted**." },
+  { q: "Summation invariant?", a: "`total = 1+…+(i−1) ∧ 1 ≤ i ≤ n+1`" },
+]} />
+
+<Quiz questions={[
+  { q: "At `find_max` exit, how do we get `i = n`?", options: ["from ¬B alone", "¬B gives `i ≥ n`, P gives `i ≤ n`", "from the precondition"], answer: 1, why: "The bound in P plus the negated guard squeeze i to n." },
+  { q: "`assert (numbers[j] <= numbers[j+1] for j in range(len(numbers)-1))` on `[3, 1]`…", options: ["fails", "passes", "raises TypeError"], answer: 1, why: "It asserts a generator object, which is always truthy." },
+  { q: "`list(range(5, 2))` is…", options: ["`[5, 4, 3]`", "`[]`", "`[2, 3, 4]`"], answer: 1, why: "Step defaults to +1, so nothing is produced." },
+  { q: "Which are needed for **total** correctness of a while loop?", options: ["Init", "Maintain", "Exit", "Variant"], answer: [0, 1, 2, 3], why: "The while rule gives partial correctness; a variant adds termination." },
+  { q: "The GCD loop variant is…", options: ["x", "y", "a + b"], answer: 1, why: "`0 ≤ x % y < y`, so y strictly decreases." },
+]} />
+
+<p class="sources">Sources: lec 2 Jupyter Notebook.ipynb, 13 Nov slides</p>

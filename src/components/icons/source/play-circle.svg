@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" data-aliases="play start focus timer" data-waive-angle="a play triangle points right with sloped sides">
+  <circle cx="12" cy="12" r="9.75"/>
+  <path d="M13.384 9.962L15.22 11.163C15.823 11.558 16.125 11.755 16.125 12C16.125 12.245 15.823 12.442 15.22 12.837L11.547 15.238C10.818 15.715 10.453 15.954 10.227 15.831C10 15.709 10 15.273 10 14.401L10 9.599C10 8.727 10 8.291 10.227 8.169C10.453 8.046 10.818 8.285 11.547 8.762Z" data-role="detail"/>
+  <circle cx="12" cy="12" r="9.75" data-role="silhouette"/>
+</svg>

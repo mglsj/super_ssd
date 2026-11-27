@@ -1,0 +1,35 @@
+---
+import Base from '@/layouts/Base.astro';
+import { getNotes, PARTS } from '@/lib/notes';
+
+const notes = await getNotes();
+---
+
+<Base title="SSD Notes">
+  <h1 class="font-serif text-4xl font-semibold tracking-tight md:text-5xl">SSD Notes</h1>
+  <p class="prose-body mt-4 text-muted-foreground">
+    Notes for Software Systems Development: Python, then specifications, loop invariants, Hoare logic and induction.
+    Each topic opens with a TL;DR, keeps sections short, and ends with flashcards and a quiz. Short on time? Start with
+    the <a href={`${import.meta.env.BASE_URL}exam-q2-q5/`}>solved past paper</a>.
+  </p>
+
+  {
+    PARTS.map((p) => (
+      <section class="mt-12">
+        <h2 class="topic-group">{p.label}</h2>
+        <ol class="border-t">
+          {notes
+            .filter((n) => n.data.part === p.id)
+            .map((n) => (
+              <li class="border-b">
+                <a href={`${import.meta.env.BASE_URL}${n.id}/`} class="group block py-4">
+                  <span class="font-serif text-xl font-semibold group-hover:text-primary">{n.data.title}</span>
+                  <span class="mt-1 block font-serif text-base text-muted-foreground">{n.data.description}</span>
+                </a>
+              </li>
+            ))}
+        </ol>
+      </section>
+    ))
+  }
+</Base>

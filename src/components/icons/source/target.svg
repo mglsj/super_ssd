@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" data-aliases="exam goal">
+  <circle cx="12" cy="12" r="9.5"/>
+  <circle cx="12" cy="12" r="5" data-role="detail"/>
+  <path d="M12 12h.01" data-role="detail"/>
+  <circle cx="12" cy="12" r="9.5" data-role="silhouette"/>
+</svg>

@@ -1,0 +1,181 @@
+---
+title: "Hoare Logic"
+description: "Prove code correct with {P} S {Q} and five rules. Reason backwards, one line at a time."
+part: reasoning
+order: 3
+---
+import { Callout, Fold, Rules, Rule, Proof, Mermaid, Flashcards, Quiz } from '@/components/notes';
+
+<Callout type="tip" title="TL;DR">
+
+- `{P} S {Q}`: if P is true before S runs, Q is true after (if S finishes).
+- **Assignment goes backwards:** take the post, swap `x` for `E`.
+- **Loops need an invariant**, which must be true before, during and after.
+
+</Callout>
+
+## The Hoare triple
+
+A **Hoare triple** is a promise about a piece of code.
+
+<Mermaid code={`flowchart LR
+  P["{P}<br/>precondition<br/>BEFORE"] --> S["S<br/>the code"] --> Q["{Q}<br/>postcondition<br/>AFTER"]`} />
+
+Example: `{x = 5}  x = x + 1  {x = 6}`
+
+- **P** is the caller's job: make it true first.
+- **Q** is the code's job: deliver it afterwards.
+
+<Callout type="warning" title="Trap">
+**Partial correctness**: Q is only promised *if S terminates*. An infinite loop "satisfies" any triple.
+</Callout>
+
+## The 5 rules at a glance
+
+Read every rule as **"if the top is true, the bottom is true."**
+
+<Rules>
+  <Rule name="Assign" conclusion="{Q[x ↦ E]} x = E {Q}" note="axiom: nothing on top" />
+  <Rule name="Seq" premises={["{P} S₁ {R}", "{R} S₂ {Q}"]} conclusion="{P} S₁; S₂ {Q}" note="R is the bridge" />
+  <Rule name="If" premises={["{P ∧ B} S₁ {Q}", "{P ∧ ¬B} S₂ {Q}"]} conclusion="{P} if B then S₁ else S₂ {Q}" note="both branches reach Q" />
+  <Rule name="While" premises={["{P ∧ B} S {P}"]} conclusion="{P} while B do S {P ∧ ¬B}" note="P = loop invariant" />
+  <Rule name="Cons" premises={["P ⇒ P₁", "{P₁} S {Q₁}", "Q₁ ⇒ Q"]} conclusion="{P} S {Q}" note="strengthen pre, weaken post" />
+</Rules>
+
+<Callout type="tip" title="Memory hook">
+**"A Silly Idea Will Compile"**: **A**ssign, **S**eq, **I**f, **W**hile, **C**ons.
+</Callout>
+
+## Assignment: think backwards
+
+Start at the **postcondition**. Replace every `x` with `E`. That's your precondition.
+
+<Mermaid code={`flowchart TB
+  pre["{ Q[x ↦ E] }"] --> st["x = E"] --> post["{ Q }"]
+  post -. "swap x for E ⬆" .-> pre`} />
+
+| Want after | Code | Need before |
+|---|---|---|
+| `x = 5` | `x = y` | `y = 5` |
+| `x > 0` | `x = x + 1` | `x + 1 > 0` |
+| `x = b ∧ y = a` | `y = temp` | `x = b ∧ temp = a` |
+
+<Callout type="warning" title="Trap">
+Never reason forwards ("now x equals x+1"). Always **substitute into the post**.
+</Callout>
+
+## Consequence: which way is allowed?
+
+<Mermaid code={`flowchart LR
+  A["{P}<br/>stronger"] ==>|"P ⇒ P₁ ✓"| B["{P₁}"] --> S["S"] --> C["{Q₁}"] ==>|"Q₁ ⇒ Q ✓"| D["{Q}<br/>weaker"]`} />
+
+- ✓ **Strengthen the pre** (ask for *more*).
+- ✓ **Weaken the post** (promise *less*).
+- ✗ The other two directions are unsound.
+
+<Proof lines={[
+  { a: "{ x = 5 }" },
+  { a: "⇒ { x + 1 > 0 }", j: "Cons: 5 + 1 > 0" },
+  { c: "x = x + 1", j: "Assign" },
+  { a: "{ x > 0 }" },
+]} />
+
+<Callout type="important" title="Exam">
+This is exactly past-paper **Q3**. See the <a href={`${import.meta.env.BASE_URL}exam-q2-q5/#q3-which-cons-moves-are-legal`}>Exam Mix</a>.
+</Callout>
+
+## Seq: the swap proof
+
+Goal: `{x = a ∧ y = b} temp = x; x = y; y = temp {x = b ∧ y = a}`
+
+Work **bottom → top**, one assignment at a time:
+
+<Mermaid code={`flowchart TB
+  A["{ x = a ∧ y = b }"] -->|"temp = x"| B["{ temp = a ∧ y = b }"]
+  B -->|"x = y"| C["{ temp = a ∧ x = b }"]
+  C -->|"y = temp"| D["{ x = b ∧ y = a }"]
+  D -. "y ↦ temp" .-> C
+  C -. "x ↦ y" .-> B
+  B -. "temp ↦ x" .-> A`} />
+
+Then **Seq** glues the three steps together. ✓
+
+## If: absolute value
+
+Each branch gets its condition for free. Both must land on the **same Q**.
+
+<Mermaid code={`flowchart TB
+  T["{ True }"] --> B{"x < 0 ?"}
+  B -- yes --> a1["{ x < 0 }"] --> s1["abs = -x"] --> q["{ abs ≥ 0 }"]
+  B -- no --> a2["{ x ≥ 0 }"] --> s2["abs = x"] --> q`} />
+
+## While: the invariant recipe
+
+<Mermaid code={`flowchart TB
+  P["{ P }"] --> B{"B ?"}
+  B -- true --> S["body S"] -->|"P again"| B
+  B -- false --> X["{ P ∧ ¬B } ⇒ Post"]`} />
+
+Three checks. That's it:
+
+1. **Init:** P is true before the loop.
+2. **Keep:** `{P ∧ B} S {P}`.
+3. **Exit:** `P ∧ ¬B ⇒` the postcondition.
+
+<Callout type="tip" title="Finding P">
+Take the postcondition and **replace a constant with the loop variable**.
+`total = 1+…+n` becomes `total = 1+…+(i−1)`.
+</Callout>
+
+<Fold title="Worked: summation proof">
+
+<Proof lines={[
+  { a: "{ n ≥ 0 }" },
+  { c: "total = 0; i = 1" },
+  { i: "{ P: total = 1+…+(i−1) ∧ 1 ≤ i ≤ n+1 }", j: "init ✓" },
+  { c: "while i <= n:" },
+  { a: "{ P ∧ i ≤ n }", indent: 1 },
+  { c: "total = total + i", indent: 1 },
+  { c: "i = i + 1", indent: 1 },
+  { i: "{ P }", indent: 1, j: "keep ✓" },
+  { a: "{ P ∧ i > n } ⇒ total = 1+…+n", j: "exit ✓" },
+]} />
+
+</Fold>
+
+## Exam recipe
+
+1. Write the triple with **ghost variables**: `{x = X ∧ y = Y}`.
+2. Annotate **backwards** through each assignment.
+3. `if`: add `∧ B` / `∧ ¬B` to each branch.
+4. `while`: state **P**, then prove init, keep and exit.
+5. Name the rule at **every** step (Assign, Seq, If, While, Cons).
+
+<Fold title="Theory corner: soundness, completeness, VCs">
+
+- **Sound** means everything provable is true. **Complete** means everything true is provable.
+- Formal meaning: `∀s, s′. P(s) ∧ (s →ᶜ s′) ⇒ Q(s′)`. Termination is assumed, because it's undecidable in general.
+- Tools like Dafny turn annotated code into logic formulas (**verification conditions**) and let an SMT solver prove them.
+
+</Fold>
+
+## Replay it
+
+<Flashcards cards={[
+  { q: "What does `{P} S {Q}` promise?", a: "If P holds before S and S **terminates**, then Q holds after." },
+  { q: "Assignment rule?", a: "`{Q[x ↦ E]} x = E {Q}`: substitute E for x in the **post**." },
+  { q: "Pre for `x = x + 1` to get `{x > 0}`?", a: "`{x + 1 > 0}`" },
+  { q: "Consequence: which direction is safe?", a: "**Strengthen** the pre, **weaken** the post." },
+  { q: "While rule premise?", a: "`{P ∧ B} S {P}`: the body keeps the invariant." },
+  { q: "3 loop checks?", a: "**Init**, **Keep** (preservation), **Exit** (`P ∧ ¬B ⇒ post`)." },
+  { q: "Partial vs total correctness?", a: "Total also proves **termination** (use a decreasing variant)." },
+]} />
+
+<Quiz questions={[
+  { q: "Weakest pre so that `y = y + 2` gives `{y = 2x}`?", options: ["`y = 2x`", "`y + 2 = 2x`", "`y − 2 = 2x`", "`y = 2x + 2`"], answer: 1, why: "Substitute `y ↦ y + 2` in the post." },
+  { q: "If `{P}S{Q}` and `Q ⇒ R`, then…", options: ["`{P}S{R}`", "`{R}S{Q}`", "nothing"], answer: 0, why: "Weakening the postcondition is allowed (Cons)." },
+  { q: "Which rules are needed to prove the swap?", options: ["Assign", "Seq", "While", "Cons"], answer: [0, 1, 3], why: "Assign ×3, Seq to glue, Cons for the final `⇔`. No loop!" },
+  { q: "The while rule's conclusion gives you…", options: ["`{P} loop {P ∧ B}`", "`{P} loop {P ∧ ¬B}`", "`{B} loop {P}`"], answer: 1, why: "When the loop exits, B is false and P still holds." },
+]} />
+
+<p class="sources">Sources: 30 Oct slides, 13 Nov slides, lec 2 notebook</p>

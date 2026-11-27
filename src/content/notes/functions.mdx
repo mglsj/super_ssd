@@ -1,0 +1,188 @@
+---
+title: "Functions as Abstraction"
+description: "Arguments as shared references, the mutable-default trap, returns, docstrings, first-class functions."
+part: python
+order: 3
+---
+import { Callout, Mermaid, Flashcards, Quiz } from '@/components/notes';
+
+<Callout type="tip" title="TL;DR">
+
+- Functions give **reuse, decomposition, abstraction**.
+- Args are passed as **object references**: mutating them is visible to the caller.
+- Defaults are evaluated **once**: never use `[]` as a default, use `None`.
+
+</Callout>
+
+## Why functions?
+
+<Mermaid code={`flowchart LR
+  F(("function")) --> R["Reusability: write once, call many"]
+  F --> D["Decomposition: big problem into named steps"]
+  F --> A["Abstraction: callers know WHAT, not HOW"]`} />
+
+Copy-pasting the same formula everywhere = **one more place for a bug** each time.
+
+## Defining & calling
+
+```python
+def create_rectangle(length, width, color="blue"):
+    """Return a dict describing a rectangle."""
+    return {"length": length, "width": width, "color": color}
+
+create_rectangle(10, 5)               # positional
+create_rectangle(width=5, length=10)  # keyword: any order
+create_rectangle(10, 5, color="red")  # mixed: positional FIRST
+create_rectangle(length=10, 5)        # SyntaxError
+```
+
+<Callout type="warning" title="Trap">
+**Positional before keyword**, always.
+</Callout>
+
+## Call by object reference
+
+Nothing is copied. The function gets a **reference** to the caller's object.
+
+<Mermaid code={`flowchart TB
+  C["caller passes object"] --> Q{"what does f do?"}
+  Q -->|"rebind: p = p + 1"| L["only LOCAL name moves, caller unchanged"]
+  Q -->|"mutate: p.append x"| M["shared object changes, caller SEES it"]`} />
+
+```python
+def add_item(xs, x):
+    xs.append(x)            # mutates caller's list
+
+items = [1, 2]
+add_item(items, 3)          # items == [1, 2, 3]
+add_item(items.copy(), 4)   # protect the original
+```
+
+<Callout type="tip" title="Remember">
+`.copy()` is **shallow**: nested lists are still shared.
+</Callout>
+
+## The mutable-default trap
+
+Defaults are evaluated **once, when `def` runs**, and stored on the function.
+
+```python
+def add_student(name, roster=[]):   # ✗ ONE shared list
+    roster.append(name)
+    return roster
+
+add_student("A")   # ['A']
+add_student("B")   # ['A', 'B']  state leaked!
+```
+
+```python
+def add_student(name, roster=None): # ✓ fresh list per call
+    if roster is None:
+        roster = []
+    roster.append(name)
+    return roster
+```
+
+- **Immutable** defaults (int, str, tuple, `None`) are safe.
+- New params **with defaults** keep old calls working (**backward compatibility**).
+
+<Callout type="important" title="Exam">
+Classic exam question. Answer: **`None` sentinel** + `if x is None`.
+</Callout>
+
+## Return values
+
+| Situation | Returns |
+|---|---|
+| `return x` | `x`, exits **immediately** |
+| no `return` / bare `return` | **`None`** |
+| `return a, b, c` | a **tuple** |
+
+```python
+def safe_divide(a, b):
+    if b == 0:
+        return None      # early return guards the main logic
+    return a / b
+
+avg, hi, lo = stats(scores)   # unpack a returned tuple
+```
+
+Many return paths are fine; only **one** runs per call.
+
+## Docstrings = contracts
+
+```python
+def area(length: float, width: float) -> float:
+    """Return the area of a rectangle.
+    Args: length, width: must be >= 0
+    Returns: length * width
+    >>> area(3, 4)
+    12
+    """
+    return length * width
+```
+
+- Read with `area.__doc__` or `help(area)`.
+- Include: **purpose**, params + types, return, edge cases/errors, example.
+- It's an informal **pre/postcondition**; later: `assert` and Hoare triples.
+
+## Functions are values
+
+You can **assign, store, pass, return** a function.
+
+```python
+def double(x): return 2 * x
+f = double                      # no () : the function itself
+ops = {"mul": lambda a, b: a * b}
+ops["mul"](3, 4)                # 12: dispatch via dict
+def apply_twice(g, x): return g(g(x))
+apply_twice(double, 3)          # 12 (higher-order)
+list(map(double, [1, 2, 3]))    # [2, 4, 6]
+```
+
+<Callout type="warning" title="Trap">
+`f = double()` **calls** it (TypeError here). `f = double` passes the function.
+</Callout>
+
+## Factories & closures
+
+```python
+def create_multiplier(factor):
+    def multiplier(x):
+        return x * factor   # remembers factor: a closure
+    return multiplier
+
+triple = create_multiplier(3)
+triple(5)   # 15
+```
+
+<Mermaid code={`flowchart LR
+  CM["create_multiplier 3"] --> M["multiplier + captured factor = 3"]
+  M -->|"called with 5"| R["15"]`} />
+
+<Callout type="tip" title="Memory hook">
+A closure is a function with a **backpack** of variables from where it was born.
+</Callout>
+
+## Replay it
+
+<Flashcards cards={[
+  { q: "3 reasons for functions?", a: "**Reuse**, **decomposition**, **abstraction**." },
+  { q: "How are arguments passed?", a: "By **object reference**: no copy is made." },
+  { q: "Rebinding a parameter affects the caller?", a: "**No.** Only mutating a shared object does." },
+  { q: "When are default values evaluated?", a: "**Once**, when `def` runs." },
+  { q: "Safe pattern for a list default?", a: "`roster=None`, then `if roster is None: roster = []`." },
+  { q: "Function with no `return` returns…", a: "`None`" },
+  { q: "`return a, b` returns…", a: "A **tuple** `(a, b)`." },
+  { q: "What is a closure?", a: "An inner function that **remembers** variables of its enclosing scope." },
+]} />
+
+<Quiz questions={[
+  { q: "`def f(x, xs=[]): xs.append(x); return xs`. What does `f(1); f(2)` return on the 2nd call?", options: ["`[2]`", "`[1, 2]`", "`[]`", "`TypeError`"], answer: 1, why: "The default list is created once and shared across calls." },
+  { q: "Which call is a `SyntaxError`?", options: ["`g(1, b=2)`", "`g(a=1, b=2)`", "`g(a=1, 2)`", "`g(1, 2)`"], answer: 2, why: "Positional arguments can't follow keyword ones." },
+  { q: "`def h(n): n = n + 1`. After `k = 5; h(k)`, `k` is…", options: ["`5`", "`6`", "`None`"], answer: 0, why: "Rebinding the local name never touches the caller's int." },
+  { q: "Which defaults are safe?", options: ["`x=0`", "`x=None`", "`x=[]`", "`x=()`", "`x={}`"], answer: [0, 1, 3], why: "Immutable defaults can't leak state; lists and dicts can." },
+  { q: "`triple = create_multiplier(3)`. `triple` is…", options: ["`3`", "a function", "`None`"], answer: 1, why: "The factory **returns** the inner function." },
+]} />
+
+<p class="sources">Sources: lec 4 - functions.ipynb</p>

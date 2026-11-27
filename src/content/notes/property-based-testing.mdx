@@ -1,0 +1,238 @@
+---
+title: "Property-Based Testing"
+description: "Hypothesis generates hundreds of inputs, checks a property, and shrinks failures to a minimum."
+part: reasoning
+order: 5
+---
+import { Callout, Fold, Mermaid, Flashcards, Quiz } from '@/components/notes';
+
+<Callout type="tip" title="TL;DR">
+
+- A property test checks `∀x ∈ G. P(x) ⇒ Q(f(x))` on **many generated inputs**.
+- On failure, Hypothesis **shrinks** to the simplest failing input.
+- Build **valid inputs by construction** (`@st.composite`, `.map`), not by rejecting (`assume`).
+
+</Callout>
+
+## The PBT formula
+
+<Mermaid code={`flowchart LR
+  UT["Unit tests<br/>point probing"] --- PBT["Property-based testing<br/>executable specs"] --- FV["Formal proof<br/>absolute, high effort"]`} />
+
+`∀x ∈ G.  P(x) ⇒ Q(f(x))`: **G** = generator, **P** = precondition (assume), **Q** = postcondition (check).
+
+```python
+def check_f(x):          # the harness every PBT tool runs, many times
+    if not P(x):         # precondition fails → discard this input
+        return
+    res = f(x)
+    assert Q(x, res), "Bug"
+```
+
+<Callout type="tip" title="Remember">
+It's the Hoare triple `{P} f {Q}`, **sampled** instead of proved.
+</Callout>
+
+## Unit test vs property test
+
+| | Unit test | Property test |
+|---|---|---|
+| Inputs | a few, by hand | hundreds, **generated** |
+| Checks | `f(3) == 9` | a **property**, e.g. `decode(encode(s)) == s` |
+| Logic | one example | `∀x. property(x)` (sampled) |
+| On failure | your input | a **shrunk, minimal** counterexample |
+
+<Mermaid code={`flowchart LR
+  G["Strategy"] -->|"generate x"| T["assert property x"]
+  T -->|"pass"| G
+  T -->|"fail"| Sh["Shrink"] --> R["minimal x"]`} />
+
+## Anatomy of a Hypothesis test
+
+```python
+from hypothesis import given, settings, Verbosity, strategies as st
+
+@settings(max_examples=1000, verbosity=Verbosity.verbose)  # ONE @settings
+@given(st.integers())                                       # strategy → arg
+def test_addition_identity(x: int):
+    assert x + 0 == x
+    assert x + 1 > x
+test_addition_identity()        # call directly (or run with pytest)
+```
+
+- **`@settings`:** `max_examples` (default **100**), `verbosity`, `deadline`, `suppress_health_check`. Combine into **one** decorator.
+- **`@given`:** tries **boundary values first** (0, 1, −1, powers of 2, extremes), then random.
+- Reads as `∀x ∈ ℤ. (x + 0 = x) ∧ (x + 1 > x)`. First failing assert **stops** that example.
+
+## Shrinking
+
+```python
+@given(st.integers())
+def test_flawed(x):
+    assert x**2 - 100 < x     # true only for −9 ≤ x ≤ 10
+```
+
+<Mermaid code={`flowchart LR
+  a["1,391,879,151 ✗"] --> b["36 ✗"] --> c["18 ✗"] --> d["12 ✗"] --> e["10 ✓"] --> f["11 ✗"]
+  f --> g["negatives: −1, −9 ✓, −10 ✗"]
+  g --> r(["x = 11 or −10"])`} />
+
+- Finds a **huge** failure, then **binary/delta-shrinks** toward zero.
+- Stops at the **boundary**: 10 passes, 11 fails.
+- For `assert x**2 > x` it shrinks to **x = 0**.
+
+<Callout type="tip" title="Memory hook">
+**"Big bug, small story"**: shrinking turns a giant input into the tiniest one that still fails.
+</Callout>
+
+## Case study: RLE
+
+```python
+def rle_encode(s):   # "AAABBC" → [('A',3), ('B',2), ('C',1)]
+    return [(c, len(list(g))) for c, g in itertools.groupby(s)]
+def rle_decode(enc):
+    return "".join(c * k for c, k in enc)
+```
+
+| Property | Check |
+|---|---|
+| **Round-trip** `f⁻¹(f(s)) = s` | `rle_decode(rle_encode(s)) == s` |
+| **Canonical** | no two adjacent runs share a char: `enc[i][0] != enc[i+1][0]` |
+
+Both use `@given(st.text())`.
+
+## Valid inputs: 3 ways
+
+Testing the **decoder** needs valid RLE: counts ≥ 1, no adjacent duplicate chars. A naive `st.lists(st.tuples(st.characters(), st.integers()))` is mostly garbage.
+
+<Mermaid code={`flowchart TB
+  N["naive strategy"] --> A["1 · assume cond<br/>reject bad draws"]
+  N --> C["2 · @st.composite<br/>build valid data"]
+  N --> M["3 · st.text.map rle_encode"]
+  A --> A2["✗ high rejection<br/>FailedHealthCheck / Unsatisfiable"]
+  C --> C2["✓ 100% valid"]
+  M --> M2["✓ concise, but trusts rle_encode"]`} />
+
+<Callout type="warning" title="Trap">
+`assume(False)` **discards** an example. Discard too many and you get a health-check failure or `Unsatisfiable`.
+</Callout>
+
+<Fold title="Code for assume and @st.composite">
+
+```python
+@settings(suppress_health_check=[HealthCheck.filter_too_much])
+@given(st.lists(st.tuples(st.characters(), st.integers())))
+def test_decode_assume(enc):
+    for _, k in enc: assume(0 < k <= 10_000)
+    for i in range(len(enc) - 1): assume(enc[i][0] != enc[i+1][0])
+    assert len(rle_decode(enc)) == sum(k for _, k in enc)
+```
+
+```python
+@st.composite
+def valid_rle(draw):
+    chars = draw(st.lists(st.characters()))
+    dedup = [c for i, c in enumerate(chars) if i == 0 or chars[i-1] != c]
+    return [(c, draw(st.integers(min_value=1, max_value=50))) for c in dedup]
+
+@given(valid_rle())
+def test_decode(enc):
+    dec = rle_decode(enc)
+    assert len(dec) == sum(k for _, k in enc)
+    assert rle_encode(dec) == enc
+```
+
+`st.text().map(rle_encode)` is the one-liner, but it **assumes `rle_encode` is correct**.
+
+</Fold>
+
+## Fuzzing: who generates ∀x?
+
+**Coverage-guided (greybox) fuzzers** like **AFL** and libFuzzer mutate seen inputs to maximise branch coverage.
+
+<Mermaid code={`flowchart LR
+  C["seed corpus"] --> P["pick seed"] --> M["mutate<br/>flip bits, splice"]
+  M --> R["run instrumented"] --> D{"new branches?"}
+  D -- "yes: keep" --> C
+  D -- no --> X["discard"]`} />
+
+- **AFL** mutates raw bytes → often **invalid** structures.
+- **Structure-aware** fuzzing (grammars) **converges** with PBT + assertions.
+- **Delta debugging** shrinks a failure keeping the same path; not always an "algebraic" minimum.
+
+<Callout type="note" title="Sparse preconditions">
+If P(x) holds for 0.01% of inputs, fuzzing or `assume` wastes **99.99%** of runs. Generator combinators satisfy P **by construction**.
+</Callout>
+
+## Lab 08: testing an AVL tree
+
+<Mermaid code={`flowchart LR
+  ops["operations"] --> T1["tree behaves like a dict"]
+  avl["avl_trees h"] --> T2["delete all keys keeps AVL valid"]
+  chk["check_avl"] --> T1
+  chk --> T2
+  T1 --> MUT["12 mutants: each failing test kills one"]
+  T2 --> MUT`} />
+
+- `operations()`: insert/delete lists; deletes **target present keys**.
+- `check_avl(tree)`: **order · heights · balance · size**.
+- Each strong property **kills** different mutants.
+
+<Fold title="The 7 strong properties">
+
+| Property | Catches |
+|---|---|
+| after every op, `check_avl(t)` | missing rotations, wrong heights, broken order |
+| tree vs `dict` model: same `len`, `in`, `get`, `items()` | lost/duplicate keys, bad replace, bad delete |
+| `items()` keys strictly increasing | traversal bugs |
+| `range_query(lo, hi) == sorted(k for k in model if lo <= k <= hi)` | off-by-one at `lo`/`hi` |
+| `delete` absent key raises `KeyError` **and** leaves tree unchanged | partial mutation before raising |
+| `get(k, "x")` returns a stored falsy value (0, None, "") | `or default` bugs |
+| n sorted inserts give `height() ≤ 1.44·log₂(n+2)` | missing rebalancing |
+
+</Fold>
+
+## Building valid AVL trees
+
+A tree of height h ≥ 2 has subtree heights **(h−1, h−1)**, **(h−1, h−2)** or **(h−2, h−1)**.
+
+```python
+@st.composite
+def shape(draw, h):
+    if h == 0: return None
+    if h == 1: return ("leaf",)
+    l, r = draw(st.sampled_from([(h-1, h-1), (h-1, h-2), (h-2, h-1)]))
+    return ("node", draw(shape(l)), draw(shape(r)))
+```
+
+- Draw a **shape**, then that many distinct keys, **sort** them, hand out **in-order**.
+- Valid **by construction**: no `assume`, no `.filter`.
+- **Stateful testing:** a `RuleBasedStateMachine` with `@rule`s (insert/delete) and an `@invariant` calling `check_avl`.
+
+<Callout type="tip" title="Big picture">
+PBT turns a **spec** (round-trip, invariant, model equivalence) into executable checks: Hoare logic, sampled instead of proved.
+</Callout>
+
+## Replay it
+
+<Flashcards cards={[
+  { q: "The PBT formula?", a: "`∀x ∈ G. P(x) ⇒ Q(f(x))`" },
+  { q: "Default `max_examples`?", a: "**100**" },
+  { q: "What does `@given` try first?", a: "**Boundary values**: 0, 1, −1, powers of 2, extremes." },
+  { q: "What is shrinking?", a: "Simplifying a failing input until it's the **minimal** one that still fails." },
+  { q: "RLE round-trip property?", a: "`rle_decode(rle_encode(s)) == s`" },
+  { q: "Downside of `assume`?", a: "High **rejection** rate → health check / `Unsatisfiable`." },
+  { q: "Downside of `st.text().map(rle_encode)`?", a: "It **trusts** `rle_encode` is correct." },
+  { q: "What does AFL mutate?", a: "**Raw bytes**, guided by branch coverage." },
+  { q: "AVL child heights for height h?", a: "(h−1, h−1), (h−1, h−2) or (h−2, h−1)." },
+]} />
+
+<Quiz questions={[
+  { q: "`assert x**2 - 100 < x` fails. Shrunk positive counterexample?", options: ["10", "11", "36", "100"], answer: 1, why: "It holds up to 10 and first fails at 11." },
+  { q: "Best way to generate valid inputs for a sparse precondition?", options: ["`assume` in a loop", "`@st.composite` or `.map`", "raise `max_examples`"], answer: 1, why: "Build valid data **by construction**, so nothing is wasted." },
+  { q: "Which are properties of RLE we tested?", options: ["round-trip", "canonical (no equal adjacent runs)", "output is sorted", "encoding is shorter"], answer: [0, 1], why: "Round-trip and canonical form. RLE can be longer than the input." },
+  { q: "Deleting an absent key in the AVL lab should…", options: ["silently do nothing", "raise `KeyError` and leave the tree unchanged", "rebalance the tree"], answer: 1, why: "Catches partial mutation before raising." },
+  { q: "How should multiple settings be applied?", options: ["Stack several `@settings`", "One `@settings` with all options", "Pass them to `@given`"], answer: 1, why: "Combine options into a single decorator." },
+]} />
+
+<p class="sources">Sources: Property Based Testing .ipynb, lab08_assignment.pdf</p>

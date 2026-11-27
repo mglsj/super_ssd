@@ -1,0 +1,142 @@
+---
+title: "Mathematical Induction"
+description: "Prove ∀n. P(n) with a base case and a step. It also powers loop invariants and recursion."
+part: reasoning
+order: 4
+---
+import { Callout, Rules, Rule, Mermaid, Flashcards, Quiz } from '@/components/notes';
+
+<Callout type="tip" title="TL;DR">
+
+- **Base** `P(0)` + **step** `∀k. P(k) → P(k+1)` ⟹ `∀n. P(n)`.
+- The step must hold for **every k**, not just one.
+- **Loop invariants** and **recursion** proofs are induction in disguise.
+
+</Callout>
+
+## The principle
+
+Let `P : ℕ → Prop` be a property of natural numbers.
+
+<Rules>
+  <Rule name="Induction on ℕ" premises={["P(0)", "∀k ∈ ℕ. P(k) → P(k+1)"]} conclusion="∀n ∈ ℕ. P(n)" note="base case + inductive step ⟹ P holds for every n" />
+</Rules>
+
+| Piece | Name | You prove… |
+|---|---|---|
+| `P(0)` | **base case** | P for the first number, directly |
+| `∀k. P(k) → P(k+1)` | **inductive step** | for an *arbitrary* k: assume P(k) (the **IH**), derive P(k+1) |
+| `∀n. P(n)` | **conclusion** | what induction gives you for free |
+
+## Dominoes 🁢
+
+<Mermaid code={`flowchart LR
+  P0["P(0)<br/>base ✓"] -->|"step k=0"| P1["P(1)"] -->|"step k=1"| P2["P(2)"] -->|"step k=2"| P3["P(3)"] --> D["…"] --> Pn["P(n) for every n"]`} />
+
+- The **base** knocks over the first domino.
+- The **step** proves *every* domino knocks over the next.
+- Together they reach **every n**.
+
+<Callout type="tip" title="Memory hook">
+**"Push the first, link them all"**: base pushes, step links.
+</Callout>
+
+## Precision matters (Exam Q2)
+
+- The conclusion is **`∀n ∈ ℕ. P(n)`** (S4), not the open formula `P(n)` (S3).
+- The step needs **`∀k ∈ ℕ. (P(k) → P(k+1))`**. One particular k is **not enough**.
+- So: induction proves **S4** by proving **S1** and **(∀k ∈ ℕ, S2)**.
+
+<Callout type="important" title="Exam">
+That's option **C** in past-paper Q2. See <a href={`${import.meta.env.BASE_URL}exam-q2-q5/#q2-induction-basics`}>Q2 solved</a>.
+</Callout>
+
+## Worked: 1 + 2 + … + n
+
+**P(n):** `Σᵢ₌₁ⁿ i = n(n+1)/2`
+
+| Part | Work |
+|---|---|
+| **Base** n = 0 | empty sum = 0, and 0·1/2 = 0 ✓ |
+| **IH** | fix arbitrary k, assume `Σ₁ᵏ i = k(k+1)/2` |
+| **Step** | `Σ₁ᵏ⁺¹ i = k(k+1)/2 + (k+1) = (k+1)(k+2)/2` ✓ |
+| **Conclude** | by induction, `∀n ∈ ℕ. P(n)` ∎ |
+
+<Callout type="tip" title="Remember">
+The step **must use the IH**. If you never use it, you're not doing induction.
+</Callout>
+
+## Loop invariants = induction
+
+Let Iₖ be "P holds at the loop test after k iterations." The **while rule** is induction on iterations.
+
+<Mermaid code={`flowchart LR
+  I0["I₀: P on entry<br/>init = BASE"] --> I1["I₁"] --> I2["I₂"] --> Ik["… Iₖ"]
+  Ik --> X["exit: P ∧ ¬B"]
+  M["maintenance<br/>= STEP"] -.-> I1
+  M -.-> I2`} />
+
+| Loop reasoning | Induction |
+|---|---|
+| initialization | base case `P(0)` |
+| maintenance `{P ∧ B} S {P}` | step `P(k) → P(k+1)` |
+| holds at every check | `∀k. P(k)` |
+| exit `P ∧ ¬B ⇒ Post` | use the result |
+
+## Recursion + structural induction
+
+Prove recursive code by **inducting on input size**:
+
+```python
+def fact(n):
+    if n == 0: return 1          # base case ↔ P(0)
+    return n * fact(n - 1)       # trusts fact(n-1) (IH) ↔ step
+```
+
+- **Base:** `fact(0) = 1 = 0!` ✓
+- **Step:** assume `fact(k) = k!`. Then `fact(k+1) = (k+1)·k! = (k+1)!` ✓
+- **Structural induction** on trees: prove for the **empty tree**, then show both subtrees OK ⇒ node OK. `check_avl` and `bst_insert` work this way.
+
+## Strong induction
+
+<Rules>
+  <Rule name="Strong induction" premises={["∀k. (∀j < k. P(j)) → P(k)"]} conclusion="∀n ∈ ℕ. P(n)" note="the IH covers every smaller number, not just k−1" />
+</Rules>
+
+Use it when the step needs **more than k−1**:
+
+- AVL minimum nodes: `N(h) = N(h−1) + N(h−2) + 1`
+- GCD, recursing on `x mod y`
+
+## Answer template
+
+1. **Claim.** `∀n ∈ ℕ. P(n)`, where `P(n) ≝ …`.
+2. **Base (n = 0).** … ✓
+3. **Inductive step.** Let k ∈ ℕ be **arbitrary**; assume P(k) (**IH**). Then … (use IH) … = P(k+1) ✓
+4. **Conclusion.** By the principle of mathematical induction, `∀n ∈ ℕ. P(n)`. ∎
+
+<Callout type="warning" title="Trap">
+Write **"arbitrary k"**. Without it, the step only covers one k, and that's the Q2 trap.
+</Callout>
+
+## Replay it
+
+<Flashcards cards={[
+  { q: "Induction rule?", a: "`P(0)` and `∀k. P(k) → P(k+1)` give `∀n. P(n)`." },
+  { q: "What is the IH?", a: "The **inductive hypothesis**: assume P(k) for an arbitrary k." },
+  { q: "Why isn't S3 the conclusion in Q2?", a: "S3 `P(n)` is an **open** formula. Induction concludes `∀n. P(n)`." },
+  { q: "Loop init corresponds to…", a: "The **base case**." },
+  { q: "Loop maintenance corresponds to…", a: "The **inductive step**." },
+  { q: "Step in the sum proof?", a: "`k(k+1)/2 + (k+1) = (k+1)(k+2)/2`" },
+  { q: "Strong induction IH?", a: "P(j) for **all j < k**, not just k−1." },
+  { q: "Structural induction base on trees?", a: "The **empty tree**." },
+]} />
+
+<Quiz questions={[
+  { q: "Induction proves S4 by proving…", options: ["S1 and S2", "S1 and `∀k ∈ ℕ, S2`", "S3 alone", "S2 for k = 0"], answer: 1, why: "The step must hold for every k." },
+  { q: "In the while rule, `{P ∧ B} S {P}` plays the role of…", options: ["base case", "inductive step", "conclusion"], answer: 1, why: "It moves P from iteration k to k+1." },
+  { q: "When do you need strong induction?", options: ["Always", "When the step needs P(k−2) or smaller too", "Only for loops"], answer: 1, why: "E.g. `N(h) = N(h−1) + N(h−2) + 1`." },
+  { q: "Which are parts of an induction proof?", options: ["base case", "inductive step", "a counterexample", "conclusion"], answer: [0, 1, 3], why: "Counterexamples disprove; they're not part of induction." },
+]} />
+
+<p class="sources">Sources: CS6.303 Endsems (Q2)</p>

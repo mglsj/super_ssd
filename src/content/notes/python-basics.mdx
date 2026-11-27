@@ -1,0 +1,223 @@
+---
+title: "Variables, Types & Expressions"
+description: "Names are tags on objects. Python is dynamic and strong. Expressions vs statements."
+part: python
+order: 1
+---
+import { Callout, Fold, Mermaid, Flashcards, Quiz } from '@/components/notes';
+
+<Callout type="tip" title="TL;DR">
+
+- A variable is a **name tag** stuck on an object, not a box.
+- Python is **dynamic** (checked at run time) and **strong** (no silent conversions).
+- **Expressions** give a value; **statements** change state. `:=` is the bridge.
+
+</Callout>
+
+## Names are tags, not boxes
+
+Assignment **binds** a name to an object. Nothing is copied.
+
+```python
+x = 10      # make int 10, tag it x
+y = x       # tag the SAME object y
+y = 20      # move tag y to a new object; x untouched
+```
+
+<Mermaid code={`flowchart LR
+  subgraph S1["after y = x"]
+    x1(["x"]) --> o1["10"]
+    y1(["y"]) --> o1
+  end
+  subgraph S2["after y = 20"]
+    x2(["x"]) --> o2["10"]
+    y2(["y"]) --> o3["20"]
+  end
+  S1 --> S2`} />
+
+- **Re-binding** one name never changes another name.
+- An object with no tags left can be **garbage-collected**.
+
+## Identity, type, value
+
+Every object has three things:
+
+| Part | Ask with | Example |
+|---|---|---|
+| **identity** | `id(obj)` | `id(x) == id(y)` right after `y = x` |
+| **type** | `type(obj)` | belongs to the object, not the name |
+| **value** | the object itself | `10` |
+
+- **Mutable** objects can change in place: `list`, `dict`.
+- **Immutable** ones can't: `int`, `str`, `tuple`.
+
+<Callout type="note" title="Why?">
+Changing `y` "doesn't change `x`" for ints because you can only **re-bind**, never mutate, an int.
+</Callout>
+
+<Fold title="Python's mindset & identifier rules">
+
+- Python is **imperative** (Turing machine: state + assignment) and **functional** (λ-calculus: functions as values). It's an abstraction layer: no manual memory management.
+- Identifiers start with a letter or `_`, then letters, digits, `_`. **Case-sensitive.**
+- Keywords (`if`, `def`, `class`, `lambda`, `None`, `True`…) are reserved.
+
+| Identifier | Valid? | Why |
+|---|---|---|
+| `no_of_students` | ✓ | |
+| `_also_valid` | ✓ | may start with `_` |
+| `no-of-students` | ✗ | `-` is minus |
+| `2nd_term` | ✗ | starts with a digit |
+| `class` | ✗ | keyword |
+
+</Fold>
+
+## Dynamic + strong typing
+
+Two **independent** questions:
+
+| | static (before running) | dynamic (while running) |
+|---|---|---|
+| **strong** (no silent mixing) | Java | **Python** |
+| **weak** (silent conversions) | C | JavaScript |
+
+```python
+x = 5          # x -> int
+x = "hello"    # x -> str: legal (dynamic)
+"5" + 5        # TypeError (strong). JS gives "55"
+```
+
+- **Dynamic** = *when* types are checked: at run time. Errors show up only when that line runs.
+- **Strong** = *whether* types mix silently: they don't.
+
+<Callout type="tip" title="Memory hook">
+**"Dynamic decides when, Strong says no."**
+</Callout>
+
+## Type hints are just labels
+
+```python
+def greet(name: str) -> str:
+    return f"Hello, {name}"
+
+greet(42)   # still runs! hints are ignored at run time
+```
+
+- Hints are **optional annotations**.
+- The interpreter **ignores** them; **mypy** and IDEs use them.
+
+<Callout type="warning" title="Trap">
+A wrong-type call is **not** a runtime error just because of a hint.
+</Callout>
+
+## Expressions vs statements
+
+- **Expression**: evaluates to a **value**. `x + 5*2`, `len(xs) > 0`, `lambda x: x*2`.
+- **Statement**: changes **state**, has no value. `x = 5`, `if`, `while`.
+- Precedence builds an **expression tree**, evaluated **bottom-up**.
+
+<Mermaid code={`flowchart TD
+  p(("+")) --> x(("x"))
+  p --> m(("* = 10"))
+  m --> f(("5"))
+  m --> t(("2"))`} />
+
+| Operator | Result |
+|---|---|
+| `10 / 3` | `3.333…` (true division) |
+| `10 // 3` | `3` (floor) |
+| `10 % 3` | `1` |
+| `2 ** 3` | `8` |
+| `"he" + "llo"`, `[1] + [2]` | `"hello"`, `[1, 2]` (overloaded `+`) |
+
+<Fold title="Expression hierarchy & lines">
+
+- Outermost first: **lambda ⊃ assignment expression `:=` ⊃ operators ⊃ primary/atomic**.
+- Comparisons `== != < <= > >=` give a `bool`. `and`, `or`, `not` **short-circuit**.
+- One **logical line** can span several physical lines (inside brackets or after `\`). `;` puts several on one physical line.
+- Assignment: (1) evaluate the right side to an object, (2) bind the name in the current namespace.
+
+</Fold>
+
+## Walrus := vs =
+
+- `x = E` is a **statement**: can't sit inside an expression.
+- `(x := E)` is an **expression**: assigns *and* gives the value.
+
+```python
+if (n := len(data)) > 10:   # assign + test in one go
+    print(n)
+print(x := 5)        # prints 5
+print(x = 5)         # TypeError: invalid keyword argument
+result = x = 5       # ✓ chained assignment
+result = (x := 5)    # ✓
+result = (x = 5)     # ✗ SyntaxError: cell won't run at all
+```
+
+<Callout type="important" title="Puzzle">
+`x, y = 10, 10` then `x, y = (y := y + 1), y`. The right side is evaluated **left to right first**: walrus sets `y = 11`, then `y` reads 11. Result: `x = 11, y = 11`.
+</Callout>
+
+<Fold title="Other assignment shapes">
+
+- Chained: `a = b = c = 5`
+- Tuple unpacking: `x, y = 1, 2`
+- List unpacking: `[x, y] = [3, 4]`
+
+</Fold>
+
+## Lambdas: one-line functions
+
+`lambda params: expression`, body is a **single expression**.
+
+```python
+square = lambda x: x ** 2
+(lambda x: x * 2)(5)                      # 10, called immediately
+list(map(lambda x: x + 5, [1, 2, 3]))     # [6, 7, 8]
+list(filter(lambda x: x % 2, range(10)))  # odd numbers
+make_mul = lambda k: (lambda x: x * k)    # lambda returning a lambda
+make_mul(2)(5)                            # 10
+```
+
+- Good for **quick one-offs**.
+- Use `def` for reused logic or anything needing a **docstring**.
+
+## if: conditional sequencing
+
+`S1; S2` means: do S1, then S2 in the state S1 left. `if` picks **exactly one** branch.
+
+<Mermaid code={`flowchart TD
+  s(["start"]) --> c{"B?"}
+  c -- True --> t["if-suite"]
+  c -- False --> e{"elif B2?"}
+  e -- True --> t2["elif-suite"]
+  e -- False --> el["else-suite, if any"]
+  t --> j(["continue"])
+  t2 --> j
+  el --> j`} />
+
+<Callout type="tip" title="Remember">
+This shape is what Hoare logic's **If rule** reasons about later.
+</Callout>
+
+## Replay it
+
+<Flashcards cards={[
+  { q: "What does `y = x` do?", a: "Binds `y` to the **same object** as `x`. No copy." },
+  { q: "3 properties of every object?", a: "**Identity** (`id`), **type**, **value**." },
+  { q: "Dynamic typing means…", a: "Types are checked at **run time**; a name can refer to any type." },
+  { q: "Strong typing means…", a: "**No silent conversions**: `'5' + 5` is a `TypeError`." },
+  { q: "Do type hints change runtime behaviour?", a: "**No.** They're ignored at run time; mypy uses them." },
+  { q: "Expression vs statement?", a: "Expression gives a **value**; statement changes **state**." },
+  { q: "`10 // 3` and `10 % 3`?", a: "`3` and `1`." },
+  { q: "`=` vs `:=`?", a: "`=` is a statement; `:=` is an **expression** that also assigns." },
+]} />
+
+<Quiz questions={[
+  { q: "Which cell is a `SyntaxError`?", options: ["`result = x = 5`", "`result = (x := 5)`", "`result = (x = 5)`", "`print(x := 5)`"], answer: 2, why: "`=` is a statement, it can't be in parentheses as a value." },
+  { q: "After `x, y = 10, 10` and `x, y = (y := y + 1), y`, what are x and y?", options: ["`10, 11`", "`11, 10`", "`11, 11`", "`10, 10`"], answer: 2, why: "Right side runs left to right: walrus makes `y` 11 before the second item is read." },
+  { q: "`'5' + 5` in Python gives…", options: ["`'55'`", "`10`", "`TypeError`", "`'5 5'`"], answer: 2, why: "Python is **strongly** typed: no implicit str/int mixing." },
+  { q: "Which identifiers are valid?", options: ["`_total`", "`2nd_term`", "`no-of-items`", "`Class`"], answer: [0, 3], why: "`Class` isn't the keyword `class` (case-sensitive). Digits can't start, `-` is minus." },
+  { q: "`print(x = 5)` gives…", options: ["prints 5", "`SyntaxError`", "`TypeError`", "prints None"], answer: 2, why: "It's parsed as a keyword argument `x` that `print` doesn't accept." },
+]} />
+
+<p class="sources">Sources: lec 1.ipynb</p>

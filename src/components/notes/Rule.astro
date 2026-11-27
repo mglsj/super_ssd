@@ -1,0 +1,22 @@
+---
+/**
+ * An inference rule: premises over a line over the conclusion.
+ * <Rule name="Seq" premises={["{P} S₁ {R}", "{R} S₂ {Q}"]} conclusion="{P} S₁; S₂ {Q}" note="R links them" />
+ */
+interface Props {
+  name: string;
+  premises?: string[];
+  conclusion: string;
+  note?: string;
+}
+const { name, premises = [], conclusion, note } = Astro.props;
+---
+
+<div class="rule">
+  <span class="rule-name">{name}</span>
+  <div class="rule-prem">
+    {premises.length ? premises.map((p) => <span>{p}</span>) : <span class="rule-axiom">(axiom: no premises)</span>}
+  </div>
+  <div class="rule-concl">{conclusion}</div>
+  {note && <p class="rule-note">{note}</p>}
+</div>

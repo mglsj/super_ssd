@@ -1,0 +1,11 @@
+---
+/** Flip-card deck at the end of a topic (interactive Svelte island). */
+import Island from '../study/Flashcards.svelte';
+
+interface Props {
+  cards: { q: string; a: string }[];
+  title?: string;
+}
+---
+
+<Island client:visible {...Astro.props} />

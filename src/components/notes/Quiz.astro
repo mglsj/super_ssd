@@ -1,0 +1,11 @@
+---
+/** Short self-check quiz at the end of a topic (interactive Svelte island). */
+import Island from '../study/Quiz.svelte';
+
+interface Props {
+  questions: { q: string; options: string[]; answer: number | number[]; why?: string }[];
+  title?: string;
+}
+---
+
+<Island client:visible {...Astro.props} />

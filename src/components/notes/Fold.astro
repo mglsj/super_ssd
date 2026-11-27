@@ -1,0 +1,24 @@
+---
+/**
+ * Optional extra detail, folded away by default (Starwind Accordion).
+ * <Fold title="Worked: summation proof"> …markdown… </Fold>
+ */
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/starwind/accordion';
+
+interface Props {
+  title: string;
+}
+const { title } = Astro.props;
+const value = `fold-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+---
+
+<Accordion class="fold" type="single">
+  <AccordionItem value={value} class="border-0">
+    <AccordionTrigger class="fold-trigger">{title}</AccordionTrigger>
+    <AccordionContent>
+      <div class="prose-body">
+        <slot />
+      </div>
+    </AccordionContent>
+  </AccordionItem>
+</Accordion>

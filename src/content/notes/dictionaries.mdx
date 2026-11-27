@@ -1,0 +1,197 @@
+---
+title: "Dictionaries"
+description: "Key → reference tables found by hashing. Hashable keys, [] vs get(), updates and live views."
+part: python
+order: 4
+---
+import { Callout, Fold, Mermaid, Flashcards, Quiz } from '@/components/notes';
+
+<Callout type="tip" title="TL;DR">
+
+- A dict maps **key → reference**, found in **O(1)** by hashing.
+- Keys must be **hashable** (immutable); values can be anything.
+- `d[k]` needs `k ∈ d` (else `KeyError`); `d.get(k)` never fails.
+
+</Callout>
+
+## Find by key, not position
+
+`student[2]`: what is 2? `student["grade"]`: the **key** says what it is.
+
+```python
+student = {"name": "Alice", "age": 20, "grade": "A",
+           "courses": ["Math", "Science"]}
+```
+
+<Mermaid code={`flowchart LR
+  s(["student"]) --> T
+  subgraph T["dict table"]
+    k1["'name'"]
+    k2["'age'"]
+    k4["'courses'"]
+  end
+  k1 --> v1["'Alice'"]
+  k2 --> v2["20"]
+  k4 --> v4["list: Math, Science"]`} />
+
+- Each key appears **once** and holds an **arrow** to a value object.
+- **Insertion order** is kept (guaranteed since 3.7).
+
+## Hashing: O(1) lookup
+
+<Mermaid code={`flowchart LR
+  k["'age'"] -->|"hash"| h["8301956132205, differs per run"]
+  h -->|"% 8"| slot["slot 5"]
+  slot --> pair["'age' → 20"]`} />
+
+- Slot = `hash(key) % table_size`. Lookup repeats this: **O(1) average**.
+- Needs **equal keys ⇒ equal hashes**, and a hash that **never changes**.
+- So keys must be **immutable**.
+
+<Fold title="Collisions & growth">
+
+When two keys land in the same slot, Python probes **another slot**. The table **grows** as it fills, keeping lookups fast.
+
+</Fold>
+
+## Creating & key rules
+
+```python
+empty = {}          # empty DICT; empty set is set()
+teacher = dict(name="Mr. Smith", years=5)   # keys become str
+# dict(2024="x")  -> SyntaxError: not a valid name
+```
+
+| Hashable keys ✓ | Unhashable keys ✗ |
+|---|---|
+| `str`, `int`, `float`, `bool` | `list`: `TypeError: unhashable type` |
+| `tuple` of hashables | `(1, [2])`: tuple holding a list |
+
+Values can be **anything**: lists, dicts, functions…
+
+## Quiz: 1, True, 1.0
+
+```python
+d = {1: 'a', True: 'b', 1.0: 'c'}
+print(d)   # ???
+```
+
+<Fold title="Answer">
+
+**`{1: 'c'}`**
+
+- `1 == True == 1.0`, with equal hashes, so they're **one key**.
+- The **first key object** (`1`) is kept.
+- The **last value** (`'c'`) wins.
+
+</Fold>
+
+<Callout type="tip" title="Memory hook">
+**"First key stays, last value plays."**
+</Callout>
+
+## [] vs get(): two contracts
+
+```python
+student["phone"]                       # KeyError: 'phone'
+student.get("phone")                   # None
+student.get("phone", "Not provided")   # 'Not provided'
+"major" in student                     # `in` checks KEYS
+```
+
+| Statement | Precondition | If k missing |
+|---|---|---|
+| `v = d[k]` | **k ∈ d** | raises `KeyError` |
+| `v = d.get(k, default)` | none | returns default / `None` |
+
+## Values are shared
+
+```python
+student = {"name": "Bob", "age": [22, 24, 26]}
+ages = student["age"]   # SAME list object
+ages[1] = 0             # student["age"] -> [22, 0, 26]
+ages = [1]              # rebinding: student unaffected
+```
+
+<Mermaid code={`flowchart LR
+  a(["ages"]) --> L["[22, 0, 26]"]
+  sk["student 'age'"] --> L`} />
+
+<Callout type="warning" title="Trap">
+**Mutating** through an alias changes the dict. **Rebinding** the alias doesn't.
+</Callout>
+
+## Updating: add or replace
+
+`d[k] = v` **adds** if `k` is new, **replaces** if it exists.
+
+```python
+s = {"name": "Alice", "age": 20}
+s["major"] = "Biology"   # added    -> len 3
+s["age"] = 21            # replaced -> len 3
+s.update({"age": 22, "minor": "Chem"})   # in place, returns None
+```
+
+<Callout type="warning" title="Nested update">
+`s.update({"grades": {"english": 88}})` **replaces** the whole inner dict (math, science lost). Do `s["grades"].update({"english": 88})`.
+</Callout>
+
+<Fold title="Specifying d[k] = v (Lecture 2 style)">
+
+```python
+old = dict(d)            # ghost copy of the "before" state
+d[k] = v
+assert d[k] == v                                  # new value present
+assert len(d) == len(old) + (k not in old)        # +1 iff k was new
+assert all(d[j] == old[j] for j in old if j != k) # frame: nothing else changed
+```
+
+</Fold>
+
+## Removing
+
+| Code | Effect | Missing key |
+|---|---|---|
+| `d.pop(k)` | remove, **return** value | `KeyError` |
+| `d.pop(k, None)` | safe version | returns `None` |
+| `del d[k]` | remove | `KeyError` |
+| `d.clear()` | empty it | — |
+| `del d` | removes the **name** | then `NameError` |
+
+## Views, loops & dict vs list
+
+```python
+inv = {"apples": 10, "bananas": 5}
+ks = inv.keys()          # also .values(), .items()
+inv["kiwis"] = 3
+print(ks)   # dict_keys(['apples', 'bananas', 'kiwis'])  LIVE view
+for name, n in inv.items(): ...   # insertion order
+```
+
+- Views are **live windows**, not copies.
+- Changing size while looping: `RuntimeError`. Loop over `list(d)` instead.
+- Dict lookup by key is **O(1)**; `grades[names.index("Bob")]` with parallel lists is **O(n)** and can drift.
+
+## Replay it
+
+<Flashcards cards={[
+  { q: "Average lookup cost in a dict?", a: "**O(1)**, via hashing." },
+  { q: "Why must keys be immutable?", a: "Their **hash must never change**, or the key gets lost." },
+  { q: "`{}` is…", a: "An empty **dict**. Empty set is `set()`." },
+  { q: "`{1: 'a', True: 'b', 1.0: 'c'}`?", a: "`{1: 'c'}`: first key kept, last value wins." },
+  { q: "Precondition of `d[k]`?", a: "`k ∈ d`, else `KeyError`." },
+  { q: "`d.get(k)` when k is missing?", a: "`None` (or the given default)." },
+  { q: "What does `update()` return?", a: "`None`: it mutates in place." },
+  { q: "Are `d.keys()` views copies?", a: "**No**, they're live and reflect later changes." },
+  { q: "Safe way to delete while looping?", a: "Loop over a snapshot: `for k in list(d): ...`" },
+]} />
+
+<Quiz questions={[
+  { q: "`print({1: 'a', True: 'b', 1.0: 'c'})`", options: ["`{1: 'a', True: 'b', 1.0: 'c'}`", "`{1: 'c'}`", "`{1.0: 'c'}`", "`{True: 'b'}`"], answer: 1, why: "All three keys are equal; first key object stays, last value wins." },
+  { q: "Which are valid dict keys?", options: ["`(1, 2)`", "`[1, 2]`", "`'id'`", "`(1, [2])`"], answer: [0, 2], why: "Lists, and tuples containing lists, are unhashable." },
+  { q: "`s = {'g': {'m': 85}}; s.update({'g': {'e': 88}})`. Now `s['g']` is…", options: ["`{'m': 85, 'e': 88}`", "`{'e': 88}`", "`{'m': 85}`"], answer: 1, why: "`update` replaces the value for key `'g'` wholesale." },
+  { q: "`d = {'a': 1}; d['a'] = 2; d['b'] = 3`. `len(d)`?", options: ["`1`", "`2`", "`3`"], answer: 1, why: "`'a'` was replaced, only `'b'` was added." },
+  { q: "Deleting keys inside `for k in d:` raises…", options: ["`KeyError`", "`RuntimeError`", "nothing"], answer: 1, why: "Dictionary changed size during iteration." },
+]} />
+
+<p class="sources">Sources: lec 6 - dictionaries.ipynb, 17 Nov slides</p>

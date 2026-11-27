@@ -1,0 +1,189 @@
+---
+title: "Lists"
+description: "Ordered, mutable sequences. Slicing, sort vs sorted, and the alias/shallow/deep copy trap."
+part: python
+order: 2
+---
+import { Callout, Fold, Mermaid, Flashcards, Quiz } from '@/components/notes';
+
+<Callout type="tip" title="TL;DR">
+
+- Lists are **ordered, mutable, heterogeneous**; each slot holds a **reference**.
+- `xs.sort()` mutates and returns `None`; `sorted(xs)` returns a **new** list.
+- `b = a` is an **alias**; `.copy()` is **shallow**; `copy.deepcopy` copies everything.
+
+</Callout>
+
+## What a list is
+
+- **Ordered**: elements keep their positions.
+- **Mutable**: change it in place.
+- **Heterogeneous**: `[1, "two", 3.0, [4]]` is fine.
+- Each slot holds a **reference** to an object. Root of every aliasing surprise!
+
+```text
+ xs =   [ 'a', 'b', 'c', 'd', 'e' ]
+ +idx:     0    1    2    3    4
+ -idx:    -5   -4   -3   -2   -1
+```
+
+## Slicing
+
+```python
+xs[0]      # 'a'          xs[-1]   # 'e'
+xs[1:3]    # ['b', 'c']   stop is EXCLUDED
+xs[:2]     # ['a', 'b']
+xs[::2]    # ['a', 'c', 'e']
+xs[::-1]   # reversed copy
+```
+
+<Callout type="tip" title="Memory hook">
+`xs[start:stop:step]`: **start is in, stop is out**, like a door you walk up to but not through.
+</Callout>
+
+## Core operations
+
+| Goal | Code | Note |
+|---|---|---|
+| add at end | `xs.append(x)` | **in place** |
+| add at index | `xs.insert(i, x)` | index past end just appends |
+| add many | `xs.extend(ys)` | in place |
+| concatenate | `xs + ys` | **new** list |
+| remove by value | `xs.remove(x)` | **first** match; `ValueError` if absent |
+| remove by index | `xs.pop(i)` / `xs.pop()` | returns the element |
+| find | `xs.index(x)` | `ValueError` if absent |
+| count / test | `xs.count(x)`, `x in xs` | linear scan |
+
+<Fold title="Handy built-ins">
+
+```python
+max(xs), min(xs), sum(xs), len(xs), xs.clear()
+for i, x in enumerate(xs, start=1): ...
+any(x > 65 for x in scores)   # at least one True
+all(x > 65 for x in scores)   # all True; all([]) is True
+```
+
+</Fold>
+
+## The `[[0]] * 3` trap
+
+`*` repeats **references**, not objects.
+
+```python
+grid = [[0]] * 3
+grid[0][0] = 7
+print(grid)                      # [[7], [7], [7]] !!
+grid = [[0] for _ in range(3)]   # ✓ three separate lists
+```
+
+<Mermaid code={`flowchart LR
+  g(["grid"]) --> s0["slot 0"] & s1["slot 1"] & s2["slot 2"]
+  s0 --> in["[7]"]
+  s1 --> in
+  s2 --> in`} />
+
+<Callout type="important" title="Exam">
+`[0] * 3` is safe: ints are immutable. The trap only bites with **mutable** inner objects.
+</Callout>
+
+## sort() vs sorted()
+
+<Mermaid code={`flowchart LR
+  A["xs.sort()"] -->|"mutates xs, returns None"| A1["xs is now sorted"]
+  B["sorted(xs)"] -->|"xs untouched, returns NEW list"| B1["works on any iterable"]`} />
+
+- Both take **`key=`** and **`reverse=True`**.
+- `xs.reverse()` is also **in place**.
+- Sorting is **stable**, O(n log n): Timsort (Powersort merge policy since 3.11).
+
+<Callout type="warning" title="Trap">
+`xs = xs.sort()` sets `xs` to **`None`**.
+</Callout>
+
+## Alias vs shallow vs deep
+
+```python
+import copy
+a = [1, 2, [3, 4]]
+b = a                  # alias: same object
+c = a.copy()           # shallow (also a[:], list(a))
+d = copy.deepcopy(a)   # deep
+```
+
+<Mermaid code={`flowchart LR
+  a(["a"]) --> L1["outer #1"]
+  b(["b"]) --> L1
+  c(["c"]) --> L2["outer #2"]
+  d(["d"]) --> L3["outer #3"]
+  L1 --> N["inner [3, 4]"]
+  L2 --> N
+  L3 --> N2["inner copy [3, 4]"]`} />
+
+| Then do… | `b` alias | `c` shallow | `d` deep |
+|---|---|---|---|
+| `a[0] = 99` | sees it | — | — |
+| `a[2].append(5)` | sees it | **sees it** | — |
+
+<Callout type="tip" title="Remember">
+**Shallow** copies the top level only. Nested mutables stay **shared**.
+</Callout>
+
+## is vs ==, and 4 'copies'
+
+- **`is`**: the very same object (identity).
+- **`==`**: equal contents.
+
+| Code | `c is original` |
+|---|---|
+| `c = original.copy()` | False |
+| `c = original[:]` | False |
+| `c = list(original)` | False |
+| `c = original` | **True**: no copy, just an alias |
+
+After `c = a.copy()`: `a == c` is **True**, `a is c` is **False**.
+
+## Iterators & testing
+
+`reversed(xs)` gives an **iterator**: lazy, saves memory, **single use**.
+
+```python
+r = reversed([1, 2, 3])
+list(r)   # [3, 2, 1]
+list(r)   # []  exhausted!
+```
+
+Good list tests check three things:
+
+1. **Core behaviour**: the normal result.
+2. **Edge cases**: empty, one element, duplicates, negatives.
+3. **Side effects**: did the original change?
+
+```python
+xs = [1, 2, 1]
+xs.remove(1)
+assert xs == [2, 1]   # only the FIRST 1 removed
+```
+
+## Replay it
+
+<Flashcards cards={[
+  { q: "What's in a list slot?", a: "A **reference** to an object." },
+  { q: "`xs[1:3]` on `['a','b','c','d']`?", a: "`['b', 'c']`: stop is excluded." },
+  { q: "`xs.insert(100, x)` on a short list?", a: "Just **appends**. No error." },
+  { q: "`xs.remove(x)` removes…", a: "The **first** occurrence; `ValueError` if absent." },
+  { q: "`xs.sort()` returns?", a: "`None`. It mutates in place." },
+  { q: "Safe 3×1 grid?", a: "`[[0] for _ in range(3)]`" },
+  { q: "Shallow copy shares…", a: "**Nested** mutable objects." },
+  { q: "`is` vs `==`?", a: "`is` = same object; `==` = equal contents." },
+  { q: "Second `list(r)` on a `reversed` iterator?", a: "`[]`: iterators are **exhausted** after one use." },
+]} />
+
+<Quiz questions={[
+  { q: "`g = [[0]] * 3; g[0][0] = 7; print(g)`", options: ["`[[7], [0], [0]]`", "`[[7], [7], [7]]`", "`[7, 0, 0]`", "`TypeError`"], answer: 1, why: "All three slots reference the **same** inner list." },
+  { q: "`a = [1, [2]]; c = a.copy(); a[1].append(3)`. What is `c`?", options: ["`[1, [2]]`", "`[1, [2, 3]]`", "`[1, [2], 3]`"], answer: 1, why: "Shallow copy: the inner list is shared." },
+  { q: "After `xs = [3, 1, 2]; xs = xs.sort()`, `xs` is…", options: ["`[1, 2, 3]`", "`[3, 1, 2]`", "`None`"], answer: 2, why: "`sort()` returns `None`, and you bound `xs` to it." },
+  { q: "Which make a NEW list object?", options: ["`a.copy()`", "`a[:]`", "`list(a)`", "`b = a`"], answer: [0, 1, 2], why: "`b = a` is only an alias." },
+  { q: "`all([])` is…", options: ["`True`", "`False`", "`ValueError`"], answer: 0, why: "Vacuously true: no element fails." },
+]} />
+
+<p class="sources">Sources: lec 3 Jupyter Notebook.ipynb</p>

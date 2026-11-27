@@ -1,0 +1,191 @@
+---
+import '@/styles/global.css';
+import { ThemeInitScript } from '@starwind-ui/astro/theme';
+import { Button } from '@/components/starwind/button';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/starwind/sheet';
+import { getNotes, PARTS } from '@/lib/notes';
+
+interface Props {
+  title: string;
+  description?: string;
+  /** id of the note being shown, for the active sidebar link */
+  current?: string;
+  /** "On this page" headings */
+  toc?: { slug: string; text: string }[];
+}
+const { title, description = 'Study notes for Software Systems Development', current, toc = [] } = Astro.props;
+const notes = await getNotes();
+const groups = PARTS.map((p) => ({ ...p, items: notes.filter((n) => n.data.part === p.id) }));
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`} />
+    <title>{current ? `${title} · SSD Notes` : title}</title>
+    <ThemeInitScript />
+  </head>
+  <body class="bg-background text-foreground font-sans antialiased">
+    <header class="bg-background/90 sticky top-0 z-30 border-b backdrop-blur">
+      <div class="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 md:px-6">
+        <Sheet>
+          <SheetTrigger asChild>
+            <Button variant="ghost" size="icon-sm" class="lg:hidden" aria-label="Open the list of topics">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"></path></svg>
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" class="w-72 overflow-y-auto">
+            <SheetHeader><SheetTitle class="font-serif text-xl">Topics</SheetTitle></SheetHeader>
+            <nav class="px-4 pb-6" aria-label="Topics">
+              <ol class="topic-list">
+                {
+                  groups.map((g) => (
+                    <li>
+                      <p class="topic-group">{g.label}</p>
+                      <ol>
+                        {g.items.map((n) => (
+                          <li>
+                            <a href={`${import.meta.env.BASE_URL}${n.id}/`} aria-current={n.id === current ? 'page' : undefined}>
+                              {n.data.title}
+                            </a>
+                          </li>
+                        ))}
+                      </ol>
+                    </li>
+                  ))
+                }
+              </ol>
+            </nav>
+          </SheetContent>
+        </Sheet>
+
+        <a href={import.meta.env.BASE_URL} class="font-serif text-xl font-semibold tracking-tight">SSD Notes</a>
+        <div class="flex-1"></div>
+        <Button variant="ghost" size="icon-sm" data-theme-toggle aria-label="Switch between light and dark">
+          <svg class="dark:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>
+          <svg class="hidden dark:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"></path></svg>
+        </Button>
+      </div>
+    </header>
+
+    <div class="mx-auto grid max-w-7xl gap-10 px-4 md:px-6 lg:grid-cols-[14rem_minmax(0,1fr)] xl:grid-cols-[14rem_minmax(0,1fr)_13rem]">
+      <aside class="hidden lg:block">
+        <nav class="sticky top-14 max-h-[calc(100dvh-3.5rem)] overflow-y-auto py-8" aria-label="Topics">
+          <ol class="topic-list">
+            {
+              groups.map((g) => (
+                <li>
+                  <p class="topic-group">{g.label}</p>
+                  <ol>
+                    {g.items.map((n) => (
+                      <li>
+                        <a href={`${import.meta.env.BASE_URL}${n.id}/`} aria-current={n.id === current ? 'page' : undefined}>
+                          {n.data.title}
+                        </a>
+                      </li>
+                    ))}
+                  </ol>
+                </li>
+              ))
+            }
+          </ol>
+        </nav>
+      </aside>
+
+      <main class="min-w-0 py-8 md:py-12">
+        <div class="mx-auto max-w-[42rem]">
+          <slot />
+        </div>
+      </main>
+
+      {
+        toc.length > 0 && (
+          <aside class="hidden xl:block">
+            <nav class="sticky top-14 py-8" aria-label="On this page">
+              <p class="topic-group">On this page</p>
+              <ol class="toc">
+                {toc.map((h) => (
+                  <li>
+                    <a href={`#${h.slug}`} data-toc={h.slug}>
+                      {h.text}
+                    </a>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+          </aside>
+        )
+      }
+    </div>
+
+    <script>
+      import { initThemeController } from '@starwind-ui/astro/theme';
+
+      const theme = initThemeController();
+      document.querySelectorAll('[data-theme-toggle]').forEach((btn) =>
+        btn.addEventListener('click', () => theme.setTheme(theme.getResolvedTheme() === 'dark' ? 'light' : 'dark')),
+      );
+
+      // highlight the section being read in "On this page"
+      const links = new Map([...document.querySelectorAll<HTMLAnchorElement>('[data-toc]')].map((a) => [a.dataset.toc!, a]));
+      if (links.size) {
+        const io = new IntersectionObserver(
+          (entries) => {
+            for (const e of entries) {
+              if (!e.isIntersecting) continue;
+              links.forEach((a) => a.removeAttribute('aria-current'));
+              links.get(e.target.id)?.setAttribute('aria-current', 'true');
+            }
+          },
+          { rootMargin: '-15% 0px -75% 0px' },
+        );
+        links.forEach((_, id) => {
+          const h = document.getElementById(id);
+          if (h) io.observe(h);
+        });
+      }
+    </script>
+  </body>
+</html>
+
+<style is:global>
+  .topic-list,
+  .topic-list ol,
+  .toc {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .topic-list > li + li {
+    margin-top: 1.5rem;
+  }
+  .topic-group {
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+    margin: 0 0 0.5rem;
+  }
+  .topic-list a,
+  .toc a {
+    display: block;
+    padding: 0.3rem 0 0.3rem 0.75rem;
+    border-left: 1px solid var(--border);
+    font-size: 0.8rem;
+    line-height: 1.4;
+    color: var(--muted-foreground);
+  }
+  .topic-list a:hover,
+  .toc a:hover {
+    color: var(--foreground);
+  }
+  .topic-list a[aria-current],
+  .toc a[aria-current] {
+    color: var(--primary);
+    border-left-color: var(--primary);
+  }
+</style>
