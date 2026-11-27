@@ -1,0 +1,233 @@
+---
+title: "Quiz 2: All 20 Questions Solved"
+description: "Twenty multiple-choice questions on Python, specs, invariants, copying, functions, dicts and AVL trees, with the reason behind each answer."
+part: exam
+order: 2
+---
+import { Callout, Fold, Quiz } from '@/components/notes';
+
+<Callout type="tip" title="TL;DR">
+
+- 20 MCQs, 2 marks each. Every answer is one option.
+- Most-missed ideas: **dynamic ≠ strong typing** (Q4), **shallow copies share nested lists** (Q13), **dict values are shared, not copied** (Q17), **no positional argument after a keyword one** (Q14).
+- Try each block first, then read the reason under each answer.
+
+</Callout>
+
+<Callout type="note" title="How to use this page">
+Each section shows any code the questions need, then a small quiz. Click an option to see whether you're right and why. The full answer key is at the bottom.
+</Callout>
+
+## Python basics (Q1–Q8)
+
+**Q2:** the formula is written as `area = 3.14 * radius` instead of `area = 3.14 * radius ** 2`.
+
+**Q6:**
+
+```python
+def greet(name: str) -> str:
+    return f"Hello, {name}"
+
+result = greet(42)   # passing an int instead of a str
+```
+
+**Q7:**
+
+```python
+# Example 1
+result1 = (x := 5)
+
+# Example 2
+result2 = (x = 5)
+```
+
+<Quiz title="Q1–Q8" questions={[
+  { q: "What is the main advantage of programming in Python's **abstract machine** instead of the exact machine?", options: ["Direct control over hardware registers and memory addresses", "You think at a higher level of abstraction while the interpreter handles low-level details", "Faster execution for maths", "Less memory for the same program"], answer: 1, why: "Python is an abstraction layer: names point to objects and memory is managed for you. It is not faster or leaner, and it hides registers and addresses." },
+  { q: "Q2: the area formula misses `** 2`. The program runs but gives wrong results. What kind of error is this?", options: ["Syntax error", "Runtime error", "Semantic / logical error", "Compilation error"], answer: 2, why: "The code is valid and never crashes. It just computes the wrong thing. That is a logical (semantic) error." },
+  { q: "In BNF, what are production rules written with `::=` for?", options: ["Defining what Python statements mean at run time", "Deciding how memory is allocated", "Formally defining the **syntax** of valid programs with non-terminals and terminals", "Deciding how `if` and loops behave at run time"], answer: 2, why: "BNF describes **syntax** (what is well-formed), not semantics (what it does)." },
+  { q: "What is the key difference between **dynamically** typed and **strongly** typed?", options: ["Dynamic: a variable can refer to objects of different types. Strong: operations are strictly type-checked", "Dynamic allows implicit conversions; strong prevents reassignment", "Dynamic is about run-time speed; strong is about compile-time checks", "Dynamic needs type declarations; strong allows flexible operations"], answer: 0, why: "Dynamic is about **when** types are checked (run time, so names can be rebound to any type). Strong is about **whether** types mix silently (they don't). Option B mixes up both." },
+  { q: "What happens when you run `\"5\" + 5`?", options: ["Returns `\"55\"` by implicit conversion", "Returns `10` by converting the string", "Raises `TypeError`: Python won't mix str and int here", "Returns `False` because the types differ"], answer: 2, why: "Strong typing: `TypeError: can only concatenate str (not \"int\") to str`. JavaScript would give `\"55\"`." },
+  { q: "Q6: what happens when `greet(42)` runs?", options: ["`TypeError` at run time because 42 is not a str", "It runs and returns `\"Hello, 42\"`: type hints are ignored at run time", "It fails to compile because the hint is violated", "It converts 42 to `\"42\"` to satisfy the hint"], answer: 1, why: "Hints are for tools like mypy. The interpreter ignores them, and the f-string happily formats 42." },
+  { q: "Q7: what is the key difference between the two examples?", options: ["Both work and give the same result", "Example 1 is valid; Example 2 is a `SyntaxError` because an assignment statement can't be used as an expression", "Example 2 is valid; Example 1 is a `TypeError`", "Both fail because assignments can't be in parentheses"], answer: 1, why: "`:=` is an **expression** (assigns and returns the value). `=` is a **statement**, so `(x = 5)` is a syntax error." },
+  { q: "Which is a good use of a **lambda**?", options: ["A complex function with several conditions and loops", "A small anonymous function passed to `map()` or `filter()`", "A recursive function", "A class method with a long docstring"], answer: 1, why: "A lambda is one expression with no name: ideal for short throwaway functions like the key or transform in `map` / `filter` / `sorted`." },
+]} />
+
+## Correctness: specs and invariants (Q9–Q12)
+
+**Q9:**
+
+```python
+def swap_verified(x, y):
+    original_x, original_y = x, y   # capture initial values
+    temp = x
+    x = y
+    y = temp
+    assert x == original_y and y == original_x, "Swap failed!"
+    return x, y
+```
+
+**Q11:**
+
+```python
+def find_max(numbers):
+    assert len(numbers) > 0
+    max_so_far = numbers[0]
+    i = 1
+    n = len(numbers)
+    # Loop invariant P: max_so_far = max(numbers[0..i-1])
+    while i < n:
+        if numbers[i] > max_so_far:
+            max_so_far = numbers[i]
+        i = i + 1
+    return max_so_far
+```
+
+**Q12:**
+
+```python
+def gcd(a, b):
+    assert a > 0 and b > 0
+    x, y = a, b
+    # Loop invariant: gcd(x, y) == gcd(a, b)
+    while y != 0:
+        x, y = y, x % y
+    return x
+```
+
+<Quiz title="Q9–Q12" questions={[
+  { q: "Q9: why store `original_x` and `original_y`?", options: ["Backup copies in case the swap fails", "To keep the initial values so the swap can be **verified**", "To save memory", "To support different data types"], answer: 1, why: "They are **ghost variables**: they never affect the result, they only let the postcondition talk about the old values." },
+  { q: "`second_largest(a, b, c)` for three distinct numbers: which assertions give the **strongest** check?", options: ["`result != max(a, b, c)` and `result >= min(a, b, c)`", "`result in {a, b, c}` and `result != max(a, b, c)`", "`result in {a, b, c}` and `result >= min(a, b, c)`", "`result in {a, b, c}` and `result != max(a, b, c)` and `result >= min(a, b, c)`"], answer: 3, why: "Among three distinct inputs, the only value that is an input, is not the max, and is ≥ the min is the second largest. Drop any one condition and a wrong answer slips through (for example, A allows values that aren't inputs)." },
+  { q: "Q11: by the while rule `{P ∧ B} C {P}` / `{P} while B do C {P ∧ ¬B}`, what must be proven about the body `C`?", options: ["`C` always terminates", "`C` runs in constant time", "If `P` holds and `B` is true before `C`, then `P` still holds after `C`", "`C` sets `max_so_far` and `i` to their final values"], answer: 2, why: "That's the premise `{P ∧ B} C {P}`: the body **preserves** the invariant. Termination is not part of partial correctness." },
+  { q: "Q12: which fact keeps `gcd(x, y) == gcd(a, b)` true after `x, y = y, x % y`?", options: ["`gcd(x, y) = gcd(y, x)` (commutativity)", "`gcd(x, y) = gcd(y, x mod y)` for `y ≠ 0`", "`gcd(x, y) ≤ min(x, y)`", "`%` always gives a non-negative result"], answer: 1, why: "The Euclidean step: any common divisor of `x` and `y` also divides `x mod y`, and the reverse holds too. So the gcd is unchanged." },
+]} />
+
+## Lists, functions and dictionaries (Q13–Q18)
+
+**Q13:**
+
+```python
+original = [1, 2, [3, 4]]
+copy_a = original.copy()
+copy_b = original[:]
+copy_c = list(original)
+
+copy_a[2][1] = 99   # only modify through copy_a
+```
+
+**Q14:**
+
+```python
+def create_rectangle(length, width, color):
+    return f"A {color} rectangle {length}x{width}"
+```
+
+**Q15:**
+
+```python
+def process_data(data, value=0):
+    data.append(value)
+    value = value + 1
+    return data, value
+
+original_list = [1, 2, 3]
+original_num = 10
+result_list, result_num = process_data(original_list, original_num)
+```
+
+**Q16:**
+
+```python
+def double(x):
+    return x * 2
+
+def square(x):
+    return x ** 2
+
+operations = [double, square]
+result = operations[1](5)
+```
+
+**Q17 and Q18:**
+
+```python
+student = {
+    "name": "Bob",
+    "age": [22, 24, 26],
+    "major": "Computer Science",
+}
+std_age = student["age"]
+std_age[1] = 0        # Q17 only
+```
+
+<Quiz title="Q13–Q18" questions={[
+  { q: "Q13: which statement is TRUE after the code runs?", options: ["Only `original` and `copy_a` show the change", "`original`, `copy_a`, `copy_b` and `copy_c` **all** show the change", "Only `copy_a` shows it", "`original` is unchanged"], answer: 1, why: "`.copy()`, `[:]` and `list()` are all **shallow**: four outer lists, but they share the **same** inner `[3, 4]`. Changing it through one shows in all. Use `copy.deepcopy` to avoid this." },
+  { q: "Q14: which call is **invalid**?", options: ["`create_rectangle(10, 5, \"blue\")`", "`create_rectangle(color=\"green\", width=8, length=12)`", "`create_rectangle(10, color=\"orange\", width=7)`", "`create_rectangle(length=10, 5, \"blue\")`"], answer: 3, why: "A positional argument can't follow a keyword argument: `SyntaxError`. C is fine (positional first, then keywords)." },
+  { q: "Q15: what are `original_list` and `original_num` afterwards?", options: ["`[1, 2, 3]`, `10`", "`[1, 2, 3, 10]`, `10`", "`[1, 2, 3, 10]`, `11`", "`[1, 2, 3]`, `11`"], answer: 1, why: "The list is **mutated in place** (shared object), so the caller sees the append. `value = value + 1` only **rebinds** the local name; ints are immutable, so `original_num` stays 10." },
+  { q: "Q16: what is `result`?", options: ["`10`", "`25`", "`7`", "`32`"], answer: 1, why: "`operations[1]` is `square` (index 1), and `square(5)` = 25. Functions are first-class values stored in a list." },
+  { q: "Q17: what is `student[\"age\"]` afterwards?", options: ["`[22, 24, 26]`", "`[22, 0, 26]`", "`[0, 24, 26]`", "Error: dict values can't be modified"], answer: 1, why: "`student[\"age\"]` returns the **same** list object, not a copy. Index 1 changes, so the dict sees `[22, 0, 26]`." },
+  { q: "Q18: which operation raises `KeyError`?", options: ["`student.get(\"phone\", \"Not provided\")`", "`student[\"name\"] = \"Alice\"`", "`student[\"phone\"]` when there is no `\"phone\"` key", "`student.update({\"age\": 21})`"], answer: 2, why: "`d[k]` needs `k` in `d`. `get` returns the default, assignment adds or replaces, and `update` adds or replaces." },
+]} />
+
+## AVL trees (Q19–Q20)
+
+**Q19:**
+
+```python
+def validate_avl_node(node):
+    if node is None:
+        return True
+
+    # Check balance factor
+    balance = get_balance(node)
+    assert -1 <= balance <= 1, f"Node {node['value']} has invalid balance: {balance}"
+
+    # Check BST property
+    if node['left'] is not None:
+        assert node['left']['value'] < node['value'], "Left child violates BST"
+    if node['right'] is not None:
+        assert node['right']['value'] > node['value'], "Right child violates BST"
+
+    # Recursive validation
+    return (validate_avl_node(node['left']) and
+            validate_avl_node(node['right']))
+```
+
+<Quiz title="Q19–Q20" questions={[
+  { q: "Q19: which AVL property is **not** verified by `validate_avl_node`?", options: ["Balance factor between −1 and 1", "BST ordering (left < parent < right)", "Height calculation correctness", "Structure of the left and right subtrees"], answer: 2, why: "It trusts `get_balance`, which reads the **stored** heights. Nothing checks that each stored height equals 1 + max(child heights). (Its BST check is also only parent-to-child, not whole subtrees, but that wasn't an option.)" },
+  { q: "Q20: after an insertion, which assertion **best** checks that the tree is still a BST and an AVL tree?", options: ["`assert root['value'] is not None`", "`assert search_node(root, inserted_value) is not None`", "`assert validate_avl_node(root) == True`", "`assert get_height(root) == old_height + 1`"], answer: 2, why: "Only C checks the balance and order properties at every node. B only checks the value is present. D is false in general: most inserts don't change the height, and a rotation can keep it the same." },
+]} />
+
+<Callout type="warning" title="Trap in Q19">
+Checking only parent and child is **not** enough for a BST. In the tree `5 → (2 → (1, 6), 8)`, every parent-child pair is ordered, but 6 sits in the left subtree of 5. A full check passes down the allowed range (`lo`, `hi`). See <a href={`${import.meta.env.BASE_URL}recursion-bst-avl/`}>Recursion, BST & AVL</a>.
+</Callout>
+
+## Answer key
+
+<Fold title="Show all 20 answers">
+
+| Q | Answer | Topic |
+|---|---|---|
+| 1 | B | abstract machine |
+| 2 | C | logical error |
+| 3 | C | BNF = syntax |
+| 4 | A | dynamic vs strong typing |
+| 5 | C | `TypeError` |
+| 6 | B | hints ignored at run time |
+| 7 | B | walrus vs `=` |
+| 8 | B | lambda use |
+| 9 | B | ghost variables |
+| 10 | D | strongest spec |
+| 11 | C | while rule premise |
+| 12 | B | Euclid step |
+| 13 | B | shallow copy shares nested list |
+| 14 | D | positional after keyword |
+| 15 | B | mutate vs rebind |
+| 16 | B | functions in a list |
+| 17 | B | dict values are shared |
+| 18 | C | `KeyError` |
+| 19 | C | heights not checked |
+| 20 | C | `validate_avl_node` |
+
+</Fold>
+
+<p class="sources">Source: Quiz 2 paper (res/quiz.pdf)</p>

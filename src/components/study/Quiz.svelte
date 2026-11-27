@@ -57,7 +57,7 @@
 
   {#each questions as q, qi (q.q)}
     <div class="q">
-      <p class="prompt"><span class="num">{qi + 1}</span>{@html fmt(q.q)}</p>
+      <p class="prompt"><span class="num">{qi + 1}</span><span class="qtext">{@html fmt(q.q)}</span></p>
       {#if isMulti(q)}<p class="multi">Pick all that apply</p>{/if}
       <div class="opts">
         {#each q.options as opt, oi (opt)}
