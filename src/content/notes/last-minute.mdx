@@ -1,0 +1,134 @@
+---
+title: "Last-Minute Notes"
+description: "Every chapter on one page in short points: the rules, the traps and the exam answers to remember."
+part: exam
+order: 0
+---
+import { Callout, Rules, Rule } from '@/components/notes';
+
+<Callout type="tip" title="How to use this page">
+One section per chapter, in reading order. Each heading links to the full page if a point doesn't click.
+</Callout>
+
+## <a href={`${import.meta.env.BASE_URL}python-basics/`}>Variables, types & expressions</a>
+
+- A variable is a **name tag on an object**, not a box. `y = x` puts a second tag on the same object.
+- Every object has an **identity** (`id`), a **type** and a **value**. `is` compares identity; `==` compares value.
+- **Rebinding** (`y = 20`) never affects other names. Only **mutating** a shared object does.
+- **Dynamic typing**: types are checked at run time and belong to objects. **Strong typing**: no silent mixing, so `"5" + 5` raises `TypeError`.
+- **Type hints are ignored at run time**: `greet(42)` with `name: str` still runs. Tools like mypy use them.
+- An **expression** has a value; a **statement** changes state. `x = 5` is a statement, `(x := 5)` is an expression.
+- `print(x = 5)` is a `TypeError` (read as a keyword argument). `result = (x = 5)` is a `SyntaxError`.
+- `//` rounds **down**: `-7 // 2 == -4`, and `-7 % 2 == 1`.
+- A `lambda` is one expression with no name. Good for `map`, `filter` and `sorted(key=…)`.
+- A semantic (logical) error runs fine and gives the wrong answer, like forgetting `** 2` in an area formula.
+
+## <a href={`${import.meta.env.BASE_URL}lists/`}>Lists</a>
+
+- Ordered, mutable, heterogeneous. Each slot holds a **reference**.
+- Slices are half-open: `xs[a:b]` includes `a` and excludes `b`.
+- `append`, `insert`, `extend`, `remove`, `pop`, `sort` and `reverse` **mutate**. `+` and `sorted` **build new lists**.
+- `xs = xs.sort()` makes `xs` equal to `None`.
+- `[[0]] * 3` gives three references to **one** inner list.
+- `b = a` is an **alias**. `.copy()`, `a[:]` and `list(a)` are **shallow**: new outer list, shared inner objects. `copy.deepcopy` copies everything.
+- `reversed()` returns a one-use **iterator**.
+- `any` is ∃ and `all` is ∀. `all([])` is `True`.
+- `assert (gen)` always passes because a generator object is truthy. Write `assert all(gen)`.
+- Don't remove items from a list while looping over it; loop over a copy or build a new list.
+
+## <a href={`${import.meta.env.BASE_URL}functions/`}>Functions</a>
+
+- Arguments are passed by **object reference**. Mutating a passed list changes the caller's list; rebinding the parameter doesn't.
+- Positional arguments must come **before** keyword arguments. `f(length=10, 5)` is a `SyntaxError`.
+- Defaults are evaluated **once, when `def` runs**. Never use a mutable default; use `None` and create the list inside.
+- No `return` means the function returns `None`. `return a, b` returns a tuple.
+- A docstring is the function's **contract**: inputs, outputs, edge cases.
+- Functions are **first-class** values. `ops[1](5)` calls whichever function is stored at index 1.
+- A **closure** keeps the variables of its enclosing function alive. It captures the variable, not the value, so `[lambda x: x * i for i in range(3)]` gives `[20, 20, 20]` on `10`.
+
+## <a href={`${import.meta.env.BASE_URL}dictionaries/`}>Dictionaries</a>
+
+- Key → reference table. Lookup is O(1) on average because keys are **hashed** to slots.
+- Keys must be **hashable** (immutable all the way down). `{[1]: 0}` is a `TypeError`.
+- Equal keys share a hash, so `{1: 'a', True: 'b', 1.0: 'c'}` is `{1: 'c'}`: the first key, the last value.
+- `d[k]` needs `k` in `d` (else `KeyError`). `d.get(k, default)` works for any key.
+- `d[k]` returns the **same** object, so `d["age"][1] = 0` through an alias changes the dict.
+- `update` replaces whole values: updating a nested dict this way loses the old inner keys.
+- Views (`keys`, `values`, `items`) are live. Changing size while looping raises `RuntimeError`.
+
+## <a href={`${import.meta.env.BASE_URL}recursion-bst-avl/`}>Recursion, BST & AVL</a>
+
+- Recursion = **base case** + recursive call on a smaller input. Correctness is proved by induction.
+- **BST property:** everything in the left subtree is smaller and everything in the right subtree is larger, over **whole subtrees**. Checking parent and child is not enough (6 under the left of 5).
+- Check a BST by passing down the open interval `(lo, hi)`.
+- Sorted input makes a BST a linked list: height n, search O(n).
+- **Balance factor** = height(left) − height(right). AVL: it is −1, 0 or +1 at **every** node, so height is O(log n).
+- Fewest nodes in an AVL tree of height h: `N(h) = N(h−1) + N(h−2) + 1`.
+- Rotations: **LL** → rotate right, **RR** → rotate left, **LR** → left then right, **RL** → right then left. Rotations keep the in-order sequence.
+- Insert needs at most one rotation (single or double). Delete may need one per level.
+- A full AVL check verifies **order, stored heights, balance and size**. Trusting stored heights misses wrong heights (Quiz 2, Q19).
+
+## <a href={`${import.meta.env.BASE_URL}specifications/`}>Specifications</a>
+
+- Testing shows bugs are present, never that they're absent. Proofs cover all inputs.
+- **Verification**: does the program meet the spec? **Validation**: is the spec what we actually want?
+- Precondition = the caller's job; postcondition = the function's promise.
+- **Ghost variables** (`x_orig = x`) record initial values so the postcondition can refer to them.
+- A spec that only mentions final values can be met by cheating: `x = 0; y = 0; z = 0` satisfies a careless max spec.
+- **Weak vs strong:** "`result ≥` every input" accepts `100`. Add "`result` is one of the inputs" to pin down the max.
+- The strongest spec rules out every wrong answer: for second-largest, "is an input ∧ is not the max ∧ ≥ the min".
+
+## <a href={`${import.meta.env.BASE_URL}loop-invariants/`}>Loop invariants</a>
+
+- An **invariant** is true every time the loop test is reached.
+- Three obligations: **initialisation** (true before the loop), **preservation** (`{P ∧ B} body {P}`), **exit** (`P ∧ ¬B ⇒` postcondition).
+- `find_max`: `max_so_far = max(numbers[0..i−1])`, checked as ∀ (upper bound) and ∃ (attained).
+- To **find** an invariant, trace a table of iterations and read off the pattern. Factorial: `y · x! = X!`.
+- An invariant can be true but **too weak** to give the postcondition (Fibonacci). Strengthen it.
+- **Termination** needs a variant: a natural number that strictly decreases every iteration (`n − i`).
+- `range(a, b)` never includes `b`.
+
+## <a href={`${import.meta.env.BASE_URL}hoare-logic/`}>Hoare logic</a>
+
+- `{P} C {Q}`: if `C` starts in a state satisfying `P` **and terminates**, it ends in `Q`. That's **partial** correctness.
+- `{False} C {Q}` and `{P} C {True}` always hold and say nothing.
+
+<Rules>
+  <Rule name="Assign" conclusion="{P[E/x]} x = E {P}" note="substitute into the post" />
+  <Rule name="Seq" premises={["{P} C₁ {R}", "{R} C₂ {Q}"]} conclusion="{P} C₁; C₂ {Q}" />
+  <Rule name="If" premises={["{P ∧ B} C₁ {Q}", "{P ∧ ¬B} C₂ {Q}"]} conclusion="{P} if B: C₁ else: C₂ {Q}" />
+  <Rule name="While" premises={["{P ∧ B} C {P}"]} conclusion="{P} while B: C {P ∧ ¬B}" />
+  <Rule name="Consequence" premises={["P ⇒ P′", "{P′} C {Q′}", "Q′ ⇒ Q"]} conclusion="{P} C {Q}" />
+</Rules>
+
+- Assignment works **backwards**: from the postcondition, replace `x` with `E`. The forward version is unsound.
+- Consequence: **strengthen the pre, weaken the post**. Never the other way.
+- Proof outline = code with an assertion between every pair of statements. Name the rule at each step.
+
+## <a href={`${import.meta.env.BASE_URL}induction/`}>Induction</a>
+
+- Prove `P(0)` and `∀k. P(k) → P(k+1)`; conclude `∀n. P(n)`.
+- The step must hold for **every** k, not one particular k. The conclusion is the ∀ statement, not the open formula `P(n)`.
+- **Strong induction**: assume `P(j)` for all `j < k`. **Structural induction**: base case = empty tree, step = both subtrees.
+- Loop invariants are induction on the number of iterations; recursion proofs are induction on input size.
+
+## <a href={`${import.meta.env.BASE_URL}property-based-testing/`}>Property-based testing</a>
+
+- A property is `∀x ∈ G. P(x) ⇒ Q(f(x))`, sampled instead of proved.
+- `@given(strategy)` generates inputs, edge cases first. `@settings(max_examples=…)` controls how many.
+- On failure, Hypothesis **shrinks** to a minimal counterexample.
+- Good properties: round-trip (`decode(encode(s)) == s`), invariants (canonical form, `check_avl`), comparison with a model (a `dict`).
+- `assume()` throws away bad inputs and fails on sparse preconditions. Build valid data with `@st.composite` or `.map`.
+- Fuzzers mutate inputs to reach new code; delta debugging shrinks a failing input.
+- Mutation testing scores tests by how many planted bugs they catch.
+
+## <a href={`${import.meta.env.BASE_URL}exam-q2-q5/`}>Past paper Q2–Q5</a>
+
+- **Q2 = C**: induction proves `∀n. P(n)` from `P(0)` and `∀k. P(k) → P(k+1)`.
+- **Q3 = A, D, F**: weaken the post (A), strengthen the pre (D), consequence plus sequence (F).
+- **Q4**: `{x = X ∧ y = Y} t := x; x := y; y := t {x = Y ∧ y = X}`, proved by three backward assignments plus Seq.
+- **Q5**: invariant `y · x! = X! ∧ x ≥ 0`. Marks go to the invariant, initialisation, preservation and exit.
+
+<Callout type="important" title="Quiz 2 answers">
+1 B · 2 C · 3 C · 4 A · 5 C · 6 B · 7 B · 8 B · 9 B · 10 D · 11 C · 12 B · 13 B · 14 D · 15 B · 16 B · 17 B · 18 C · 19 C · 20 C. Reasons are on the <a href={`${import.meta.env.BASE_URL}quiz-2/`}>Quiz 2 page</a>.
+</Callout>

@@ -1,26 +1,36 @@
 ---
 title: "Loop Invariants"
-description: "Reason about loops with init, maintain and exit: find_max, is_sorted, bubble sort."
+description: "How a single assertion that holds at every loop test lets us reason about loops, how to check it in Python, and how to find one by tracing iterations."
 part: reasoning
 order: 2
 ---
 import { Callout, Fold, Rules, Rule, Proof, Mermaid, Flashcards, Quiz } from '@/components/notes';
 
-<Callout type="tip" title="TL;DR">
+On the <a href={`${import.meta.env.BASE_URL}specifications/`}>specifications</a> page we described straight-line code and branches with pre- and postconditions, and placed an intermediate assertion after every statement. That approach breaks down for loops. A loop body may run zero times, once, or a million times, and we cannot write a separate assertion for each run. This page introduces the tool that replaces them: the **loop invariant**, a single assertion that is true every time the loop is about to test its condition.
 
-- A **loop invariant** is true every time you reach the loop test.
-- Prove 3 things: **init**, **maintain**, **exit** (`P ∧ ¬B ⇒ post`).
-- In Python, check ∀ with **`all(...)`** and ∃ with **`any(...)`**.
+We first see why an invariant is needed and what has to be proved about it. We then work through the examples from the lecture notebook: `find_max`, where the invariant is checked in Python with `all` and `any`; `for` loops and `range`; `is_sorted`; bubble sort with two nested invariants; and a summation proof. The last part of the page asks the harder question of how to *find* an invariant, using the method of the Cambridge lectures: trace the loop for a few iterations, look at the table, and read the invariant off the pattern. The formal rule behind all of this is the while rule of <a href={`${import.meta.env.BASE_URL}hoare-logic/`}>Hoare logic</a>, covered on the next page.
+
+## Why loops need invariants
+
+For three numbers we could write `max(max(a, b), c)`, or the decision tree of `max_of_three`. This approach does not scale: for 1,000 numbers we would need 999 nested calls, and for a list whose length is only known at run time it cannot be written at all. We need a loop, and with it a way of reasoning about code that runs a *dynamic* number of times.
+
+The trick is to stop thinking about individual iterations and to look for something that does not change. Every time execution reaches the loop test, the program is in some state. If we can find one statement about the variables that is true in *every* such state, whatever iteration we are on, then we know it is true in particular at the moment the loop stops.
+
+<Callout type="note" title="Definition: loop invariant">
+
+A **loop invariant** for `while B: S` is an assertion `P` that holds every time execution reaches the test `B`: before the first iteration, and after every iteration of the body `S`.
 
 </Callout>
 
-## Why loops need an invariant
-
-- `max(max(a, b), c)` works for 3 values, **not for 1000**.
-- A loop runs a **dynamic** number of times, so you can't annotate each pass.
-- Instead: find **one statement** true every time you hit the loop test. That's the **invariant**.
+`P` need not hold at every point *inside* the body. In the middle of an iteration the variables may be half-updated and `P` briefly false, provided the body restores it by the end. An invariant is also not unique. The assertion `True` holds at every loop test of every loop, so it is always an invariant, and it is useless, because it tells us nothing about the result. What we want is an invariant that is true *and* strong enough to give the postcondition when the loop ends.
 
 ## The three obligations
+
+To show that `P` is an invariant, and that it does its job, we prove three things.
+
+1. **Initialisation.** `P` holds before the first iteration, that is, it follows from the precondition and the code before the loop.
+2. **Maintenance** (or *preservation*). If `P` holds and the test `B` is true, then after one run of the body `S`, `P` holds again. In Hoare notation this is the triple `{P ∧ B} S {P}`, where `∧` means "and".
+3. **Exit.** When the loop stops, `P` is true and `B` is false, and together they must imply the postcondition. In symbols, `P ∧ ¬B ⇒ post`, where `¬` means "not" and `⇒` means "implies".
 
 <Mermaid code={`flowchart TD
   init["code before loop"] -->|"1 INIT: P holds on entry"| P{{"P holds"}}
@@ -29,24 +39,30 @@ import { Callout, Fold, Rules, Rule, Proof, Mermaid, Flashcards, Quiz } from '@/
   S -->|"2 MAINTAIN: P again"| P
   B -- "false: P ∧ ¬B" --> T["3 EXIT: P ∧ ¬B ⇒ post"]`} />
 
-1. **Init:** P true before the first iteration.
-2. **Maintain:** `{P ∧ B} S {P}`. P may be briefly false *inside* the body.
-3. **Exit:** `P ∧ ¬B` implies the postcondition.
+Why do these three suffice? Initialisation says `P` holds at the first test. Maintenance says that if `P` holds at one test and the loop continues, it holds at the next. So `P` holds at the first test, hence at the second, hence at the third, and so on for as many iterations as there are. This is an argument by <a href={`${import.meta.env.BASE_URL}induction/`}>induction</a> on the number of iterations, with initialisation as the base case and maintenance as the inductive step. When the loop finally stops, it is because `B` was false, so we know `P ∧ ¬B`, and the exit obligation turns that into the postcondition.
+
+In Hoare logic the same reasoning is packaged as a single inference rule. Read it as "if the premise above the line has been proved, the conclusion below it follows":
 
 <Rules>
-  <Rule name="While" premises={["{P ∧ B} S {P}"]} conclusion="{P} while B do S {P ∧ ¬B}" note="exactly the 3 obligations" />
+  <Rule name="While" premises={["{P ∧ B} S {P}"]} conclusion="{P} while B: S {P ∧ ¬B}" note="P is the loop invariant" />
 </Rules>
 
-<Callout type="warning" title="Partial correctness">
-The while rule doesn't prove **termination**. Add a **variant**: a natural number like `n − i` that strictly decreases each pass.
-</Callout>
+The premise is the maintenance obligation. Initialisation and exit come from combining the rule with the rule of consequence, which lets us connect the actual precondition to `P` and `P ∧ ¬B` to the actual postcondition. The <a href={`${import.meta.env.BASE_URL}hoare-logic/#the-loop-rule`}>loop rule section</a> of the Hoare logic page explains this step by step.
 
-## find_max: the code
+### Termination
+
+The three obligations prove **partial correctness**: *if* the loop stops, the result is right. They say nothing about whether it stops. A loop such as `while x > 0: x = x + 1` started with `x = 1` never ends, and any postcondition at all is vacuously "true when it ends". To prove termination we add a fourth argument, a **variant**: an integer expression, such as `n − i`, that is never negative while the loop runs and strictly decreases on every iteration. A non-negative integer cannot decrease forever, so the loop must stop. Partial correctness together with termination is called **total correctness**.
+
+## Example: find_max
+
+Here is the notebook's function for the largest element of a non-empty list:
 
 ```python
 def find_max(numbers):
     assert len(numbers) > 0                  # precondition
-    max_so_far, i, n = numbers[0], 1, len(numbers)
+    max_so_far = numbers[0]
+    i = 1
+    n = len(numbers)
     while i < n:
         if numbers[i] > max_so_far:
             max_so_far = numbers[i]
@@ -54,53 +70,86 @@ def find_max(numbers):
     return max_so_far
 ```
 
-**Invariant P:** `max_so_far = max(numbers[0..i−1]) ∧ 1 ≤ i ≤ n`
+At each loop test, the variable `i` marks how far we have got: the elements `numbers[0]` to `numbers[i−1]` have been examined, and the rest have not. The variable `max_so_far` holds the largest element seen so far. Writing `numbers[0..i−1]` for the prefix of the list up to index `i − 1`, the invariant is
 
-<Callout type="tip" title="Memory hook">
-Picture a **growing spotlight** on the prefix. On `[1, 5, 6, 3, 4, 8, 9, 2]` it widens one cell per pass; max_so_far is always the brightest so far, ending at **9**.
-</Callout>
+```text
+P:  max_so_far = max(numbers[0..i−1])  ∧  1 ≤ i ≤ n
+```
 
-## find_max: the proof
+The trace on `[1, 5, 6, 3, 4, 8, 9, 2]` shows the examined prefix growing by one element per iteration while `max_so_far` tracks its maximum:
 
-| Step | Argument |
-|---|---|
-| **Init** | `i = 1`, `max_so_far = numbers[0]` = max of `numbers[0..0]`; `1 ≤ 1 ≤ n` as list non-empty |
-| **Maintain** | either `numbers[i]` is the new max and we store it, or the old max stays. Then `i` grows, and `i+1 ≤ n` since `i < n` |
-| **Exit** | ¬B gives `i ≥ n`, P gives `i ≤ n`, so **`i = n`** and we have the max of the whole list ✓ |
+| at loop test | `i` | prefix `numbers[0..i−1]` | `max_so_far` |
+|---|---|---|---|
+| before 1st iteration | 1 | 1 | 1 |
+| after 1 | 2 | 1, 5 | 5 |
+| after 2 | 3 | 1, 5, 6 | 6 |
+| after 3 | 4 | 1, 5, 6, 3 | 6 |
+| after 5 | 6 | 1, 5, 6, 3, 4, 8 | 8 |
+| after 7 (exit) | 8 | all eight | 9 |
+
+Now the three obligations.
+
+- **Initialisation.** Before the loop, `i = 1` and `max_so_far = numbers[0]`, which is the maximum of the one-element prefix `numbers[0..0]`. The bound `1 ≤ 1 ≤ n` holds because the precondition makes the list non-empty, so `n ≥ 1`.
+- **Maintenance.** Assume `P` and the test `i < n`. The body looks at `numbers[i]`. Either it is larger than `max_so_far`, in which case it is the new maximum of `numbers[0..i]` and we store it, or it is not, in which case the old maximum is still the maximum of `numbers[0..i]`. Then `i` increases by one, so `max_so_far = max(numbers[0..i−1])` again for the new `i`. The bound is preserved because `i < n` before the increment gives `i + 1 ≤ n` after it.
+- **Exit.** When the loop stops, `¬(i < n)`, that is `i ≥ n`. The invariant gives `i ≤ n`. Together these force `i = n`, so `max_so_far = max(numbers[0..n−1])`, the maximum of the whole list.
+
+The variant is `n − i`: it starts at `n − 1 ≥ 0`, decreases by one per iteration, and the loop stops when it reaches 0.
 
 <Callout type="important" title="Exam">
-The "squeeze" `i ≥ n ∧ i ≤ n ⇒ i = n` is the classic exit step. **Always include the bound** `1 ≤ i ≤ n` in P.
+
+The exit step "`i ≥ n` from the failed test, `i ≤ n` from the invariant, so `i = n`" is the classic pattern. It only works if the invariant includes the bound `1 ≤ i ≤ n`. Without the upper bound, `i ≥ n` alone does not tell us that the whole list (and nothing beyond it) was examined. Always include the bounds on the loop counter in the invariant.
+
 </Callout>
 
-## ∀ → all, ∃ → any
+## Quantifiers in Python: all and any
 
-"max_so_far is the max of the prefix" = two quantified facts:
+The phrase "`max_so_far` is the maximum of the prefix" packs two facts together, the same two that made the `max_of_three` specification strong. We can state them separately using quantifiers. `∀j` means "for every `j`" and `∃j` means "there exists a `j`":
 
 | Math | Meaning | Python |
 |---|---|---|
-| `∀j < i. max_so_far ≥ numbers[j]` | **upper bound** | `all(...)` |
-| `∃j < i. max_so_far = numbers[j]` | **attained** | `any(...)` |
+| `∀j < i. max_so_far ≥ numbers[j]` | upper bound: nothing in the prefix is bigger | `all(...)` |
+| `∃j < i. max_so_far = numbers[j]` | attained: the value occurs in the prefix | `any(...)` |
+
+Python's built-in `all(iterable)` returns `True` exactly when every element of the iterable is true (and `True` for an empty iterable), which is the meaning of `∀`. `any(iterable)` returns `True` when at least one element is true (and `False` for an empty one), which is the meaning of `∃`. Combined with a generator expression over the indices, they turn the invariant into a runnable check at the top of each iteration:
 
 ```python
 while i < n:
     assert all(max_so_far >= numbers[j] for j in range(i)), "Upper bound violated"
     assert any(numbers[j] == max_so_far for j in range(i)), "Value not attained"
-    ...
+    if numbers[i] > max_so_far:
+        max_so_far = numbers[i]
+    i = i + 1
+assert all(max_so_far >= numbers[j] for j in range(n)), "Upper bound violated"
+assert any(numbers[j] == max_so_far for j in range(n)), "Final value not in list"
 ```
 
-Same pair as the **strong spec** of `max_of_three`!
+The two assertions after the loop are the postcondition, which is the invariant with `i` replaced by `n`. This is the same upper-bound-and-attained pair as the strong specification of `max_of_three` on the specifications page, generalised from three named values to a whole prefix.
 
-<Callout type="warning" title="assert on a generator">
-`assert (a[j] <= a[j+1] for j in range(len(a)-1))` **always passes**: a generator object is truthy. Wrap it in **`all(...)`**.
+These assertions make each iteration take time proportional to `i`, so the checked version runs in quadratic time. That is acceptable for testing a specification, not for production code.
+
+<Callout type="warning" title="A common mistake: assert on a generator">
+
+```python
+numbers = [5, 4, 3, 2, 1]
+assert (numbers[j] <= numbers[j + 1] for j in range(len(numbers) - 1))
+```
+
+This assertion always passes, even though the list is not sorted. The parenthesised expression is a *generator object*, not a boolean, and every generator object is truthy. Python never even evaluates the comparisons. Wrap the generator in `all(...)`: `assert all(numbers[j] <= numbers[j + 1] for j in range(len(numbers) - 1))` fails as it should.
+
 </Callout>
 
-## for loops & range rules
+## for loops and range
+
+The `while` loop is **indefinite iteration**: it runs until a condition fails, and we manage the counter ourselves. Python's `for` loop is **definite iteration**: `for v in seq:` runs the body once for each element of a sequence, binding `v` to each element in turn, and stops when the sequence is exhausted.
 
 | | `while` | `for` |
 |---|---|---|
-| iteration | indefinite | **definite** (over a sequence) |
+| iteration | indefinite | definite (over a sequence) |
 | index | you manage it | automatic |
-| infinite-loop risk | high | low |
+| infinite-loop risk | high, if the condition or update is wrong | low (finite sequences) |
+| use when | the number of iterations is not known | the number of iterations is known |
+
+Counting loops use `range`, which produces a sequence of integers. `range(stop)` counts from 0, `range(start, stop)` from `start`, and `range(start, stop, step)` in steps of `step`. In every case `stop` is never included, the default start is 0 and the default step is 1. If `start` is already at or past `stop` the range is empty.
 
 ```text
 range(5)        : 0 1 2 3 4
@@ -109,60 +158,106 @@ range(0, 10, 2) : 0 2 4 6 8
 range(5, 2)     : (empty)
 ```
 
-- `stop` is **never included**. Start defaults to 0, step to 1.
-- `for i in range(a, b)` ≈ `i = a; while i < b: …; i += 1`, so **same invariant reasoning**.
+For reasoning, `for i in range(a, b): body` behaves like `i = a; while i < b: body; i += 1`, so the same invariant reasoning applies: state the invariant at the start of each iteration in terms of `i`. Here is `find_max` as a `for` loop, with the same invariant:
 
-## is_sorted
+```python
+def find_max_for(numbers):
+    assert len(numbers) > 0
+    max_so_far = numbers[0]
+    for i in range(1, len(numbers)):
+        # INVARIANT: max_so_far = max(numbers[0..i−1])
+        if numbers[i] > max_so_far:
+            max_so_far = numbers[i]
+    return max_so_far
+```
+
+The correspondence is close but not exact. In the `for` version, assigning to `i` inside the body has no effect on the next iteration, because `i` is rebound to the next element of the range each time. And after a non-empty `for` loop, `i` holds the *last* value, `b − 1`, not `b` as in the `while` version. Neither difference matters as long as the invariant is stated at the start of each iteration.
+
+## Example: is_sorted
+
+A list is sorted in non-decreasing order when no element is larger than its right neighbour. Checking every adjacent pair is enough, and that is what this function does:
 
 ```python
 def is_sorted(numbers):
-    for i in range(len(numbers) - 1):     # last has no right neighbour
+    for i in range(len(numbers) - 1):     # the last element has no right neighbour
         # INVARIANT: numbers[0..i] has no inversions
         if numbers[i] > numbers[i + 1]:
             return False
     return True
 ```
 
-- **Init:** `numbers[0..0]` is one element, so sorted.
-- **Maintain:** no return means `numbers[i] ≤ numbers[i+1]`, so `numbers[0..i+1]` sorted.
-- **Exit:** every **adjacent pair** checked, so the whole list is sorted.
+An *inversion* here is an adjacent pair in the wrong order. The range stops at `len(numbers) − 1` because the comparison looks at `numbers[i + 1]`, and the last element has no neighbour to compare with. On `[1, 2, 3, 4, 5]` the loop compares the pairs (1, 2), (2, 3), (3, 4), (4, 5), and on `[1, 2, 3, 4, 5, 1]` it returns `False` at the last pair (5, 1).
 
-## Bubble sort: two invariants
+- **Initialisation.** At `i = 0` the prefix `numbers[0..0]` has a single element, which is trivially sorted.
+- **Maintenance.** If the body does not return, then `numbers[i] ≤ numbers[i + 1]`. Together with the invariant for `numbers[0..i]`, the prefix `numbers[0..i+1]` has no inversions.
+- **Exit.** If the loop completes, every adjacent pair has been checked and found in order, so the whole list is sorted. If it returns `False` early, it has found an inversion, so the list is not sorted.
+
+In the notebook's checked version, the invariant becomes `assert all(numbers[j] <= numbers[j + 1] for j in range(i))` at the top of the body, which is exactly the place where the generator pitfall above would silently do nothing.
+
+## Example: bubble sort
+
+Bubble sort makes repeated passes over a list, swapping adjacent elements that are out of order. Each pass carries the largest remaining element to the end, like a bubble rising. Its correctness needs two invariants, one for each loop.
+
+### One pass: the inner invariant
 
 ```python
-for i in range(n):
-    # OUTER: arr[n-i:] = the i largest, sorted
-    swapped = False
-    for j in range(0, n - i - 1):
-        # INNER: arr[j] = max(arr[0..j])
+def one_bubble_pass(arr):
+    n = len(arr)
+    for j in range(n - 1):
+        # INNER INVARIANT: arr[j] = max(arr[0..j])
         if arr[j] > arr[j + 1]:
-            arr[j], arr[j + 1] = arr[j + 1], arr[j]; swapped = True
-    if not swapped: break
+            arr[j], arr[j + 1] = arr[j + 1], arr[j]
+        # now arr[j + 1] = max(arr[0..j+1])
+    return arr
 ```
+
+At the start of iteration `j`, `arr[j]` is the largest of `arr[0..j]`. Comparing it with `arr[j + 1]` and swapping if necessary puts the larger of the two at position `j + 1`, so afterwards `arr[j + 1]` is the largest of `arr[0..j+1]`: the invariant for the next `j`. When the pass finishes, the last element is the maximum of the whole list. The notebook checks this with `assert max(arr[:j+1]) == arr[j]` at the start of the body and `assert max(arr[:j+2]) == arr[j+1]` at the end. Note that one pass on its own does not sort: `one_bubble_pass([6, 5, 4, 3, 2, 1])` gives `[5, 4, 3, 2, 1, 6]`.
+
+### The full sort: the outer invariant
+
+```python
+def bubble_sort(arr):
+    n = len(arr)
+    for i in range(n):
+        # OUTER INVARIANT: arr[n-i:] holds the i largest elements, sorted
+        swapped = False
+        for j in range(0, n - i - 1):
+            if arr[j] > arr[j + 1]:
+                arr[j], arr[j + 1] = arr[j + 1], arr[j]
+                swapped = True
+        if not swapped:
+            break
+    return arr
+```
+
+After `i` passes, the last `i` positions hold the `i` largest elements in sorted order, and every element in the unsorted part is at most the first element of the sorted suffix.
 
 <Mermaid code={`flowchart LR
   U["arr 0 .. n−i−1<br/>unsorted, all ≤ suffix"] --- Sd["arr n−i .. n−1<br/>i largest, sorted ✓"]`} />
 
-- **Inner:** after comparing j, j+1, `arr[j+1]` is the max of `arr[0..j+1]`: the biggest **bubbles right**.
-- **Outer:** after i passes, `is_sorted(arr[n-i:])` and they're the i largest.
-- **Early exit:** no swaps means already sorted.
+Pass `i` only runs over the unsorted part, `j` from 0 to `n − i − 2`, and by the inner invariant it carries the largest unsorted element to position `n − i − 1`, just in front of the sorted suffix. That element is at most everything in the suffix and at least everything left in front of it, so the suffix grows by one and stays sorted. After `n` passes the suffix is the whole list.
+
+The `swapped` flag gives an early exit. If a pass makes no swaps, every adjacent pair in the unsorted part was already in order, so that part is sorted; it is also no larger than the sorted suffix, so the whole list is sorted and we can stop. The notebook's `validated_bubble_sort` checks the outer invariant with `assert is_sorted(arr[n-i:])` before each inner loop and `assert is_sorted(arr[n-i-1:])` after it.
 
 <Fold title="Trace on [5, 2, 8, 1, 9]">
 
 ```text
-pass 1 → [2, 5, 1, 8, 9]   (8 bubbles up; 9 already last)
-pass 2 → [2, 1, 5, 8, 9]
-pass 3 → [1, 2, 5, 8, 9]
+pass 1: compare (5,2) swap, (5,8), (8,1) swap, (8,9)  →  [2, 5, 1, 8, 9]   8 bubbles up; 9 already last
+pass 2: compare (2,5), (5,1) swap, (5,8)              →  [2, 1, 5, 8, 9]
+pass 3: compare (2,1) swap, (2,5)                     →  [1, 2, 5, 8, 9]
+pass 4: compare (1,2), no swaps                       →  stop early
 ```
 
 </Fold>
 
-## Summation + exercises
+## Example: summation
+
+A proof outline for a loop places the invariant at the loop test and the intermediate assertions in the body. Here is the sum `1 + 2 + … + n`, with the invariant that `total` holds the sum of the numbers already added:
 
 <Proof lines={[
   { a: "{ n ≥ 0 }" },
   { c: "total = 0; i = 1" },
-  { i: "{ P: total = 1+…+(i−1) ∧ 1 ≤ i ≤ n+1 }", j: "init: empty sum" },
+  { i: "{ P: total = 1+…+(i−1) ∧ 1 ≤ i ≤ n+1 }", j: "init: empty sum, and n ≥ 0 gives 1 ≤ n+1" },
   { c: "while i <= n:" },
   { a: "{ P ∧ i ≤ n }", indent: 1 },
   { c: "total = total + i", indent: 1 },
@@ -172,11 +267,190 @@ pass 3 → [1, 2, 5, 8, 9]
   { a: "{ P ∧ i > n } ⇒ i = n+1 ∧ total = 1+…+n", j: "exit" },
 ]} />
 
-Try these yourself first: **factorial(n)** and **gcd(a, b)** with checked invariants.
+Initially `total` is the empty sum 0, and `1 ≤ i ≤ n + 1` holds because `n ≥ 0`. In the body, adding `i` extends the sum by one term, and incrementing `i` re-establishes the invariant for the new `i`. At exit, `i > n` and `i ≤ n + 1` squeeze `i` to `n + 1`, so `total = 1 + … + n`. The variant is `n + 1 − i`.
+
+## Finding invariants
+
+Checking a proposed invariant is routine; the three obligations tell us what to do. Finding one in the first place is the creative step, and the Cambridge lectures call it "the core difficulty" of verifying programs. There is no algorithm for it, but there is a reliable method:
+
+1. Write down the specification, with auxiliary (ghost) variables for the initial values.
+2. Run the loop by hand on a small or symbolic input and record the variables at each loop test in a table.
+3. Look for a relationship between the variables that is the same in every row. Very often it has the shape "what has been computed so far, combined with what remains to be computed, equals the final answer".
+4. Check that the relationship, together with the negated loop test, gives the postcondition. If it does not, strengthen it with whatever extra fact is missing, often a bound on a counter or the fact that some variable is unchanged.
+
+We apply the method to three loops from the lectures, rewritten in Python. As on the Hoare logic page, program variables are lowercase and ghost variables uppercase (the lectures use the opposite convention).
+
+### Factorial
+
+The lectures verify this loop, which multiplies `y` by `x` and counts `x` down to 0:
+
+```python
+# {x = X ∧ X ≥ 0 ∧ y = 1}
+while x != 0:
+    y = y * x
+    x = x - 1
+# {y = X!}
+```
+
+The specification needs three things: `X ≥ 0`, because factorial is only defined for non-negative numbers; the auxiliary variable `X`, because by the end `x` is 0 and the postcondition must refer to the initial value; and `y = 1`, because the implementation assumes it. Tracing the loop symbolically:
+
+| iteration | `y` | `x` |
+|---|---|---|
+| 0 | 1 | X |
+| 1 | 1 · X | X − 1 |
+| 2 | 1 · X · (X − 1) | X − 2 |
+| 3 | 1 · X · (X − 1) · (X − 2) | X − 3 |
+| … | … | … |
+| X | 1 · X · (X − 1) · … · 1 | 0 |
+
+In each row `y` is the product of the factors already multiplied in, and the factors still to come are `x · (x − 1) · … · 1`, which is `x!`. In the lectures' words, `y` is the value computed so far, and `x!` remains to be computed. Their product is always the whole answer. With `X = 4` the rows are `(y, x) = (1, 4), (4, 3), (12, 2), (24, 1), (24, 0)`, and `y · x!` is 24 every time. This suggests
+
+```text
+I  =  y · x! = X!  ∧  x ≥ 0
+```
+
+The conjunct `x ≥ 0` is needed for `x!` to make sense. The proof outline follows the usual pattern: the precondition implies `I`, the body is annotated backwards with the assignment rule, and at exit `x = 0`.
+
+<Proof lines={[
+  { a: "{ x = X ∧ X ≥ 0 ∧ y = 1 }" },
+  { i: "{ y · x! = X! ∧ x ≥ 0 }", j: "consequence: 1 · X! = X!" },
+  { c: "while x != 0:" },
+  { a: "{ y · x! = X! ∧ x ≥ 0 ∧ x ≠ 0 }", indent: 1 },
+  { a: "{ (y · x) · (x − 1)! = X! ∧ x − 1 ≥ 0 }", indent: 1, j: "consequence: x ≥ 1, so x! = x · (x − 1)!" },
+  { c: "y = y * x", indent: 1, j: "assignment" },
+  { a: "{ y · (x − 1)! = X! ∧ x − 1 ≥ 0 }", indent: 1 },
+  { c: "x = x - 1", indent: 1, j: "assignment" },
+  { i: "{ y · x! = X! ∧ x ≥ 0 }", indent: 1, j: "invariant restored" },
+  { a: "{ y · x! = X! ∧ x ≥ 0 ∧ ¬(x ≠ 0) }", j: "while rule" },
+  { a: "{ y = X! }", j: "consequence: x = 0 and 0! = 1" },
+]} />
+
+This is the same program and the same invariant as past-paper question 5, which is worked through mark by mark on the <a href={`${import.meta.env.BASE_URL}exam-q2-q5/#q5-factorial-specification-and-invariant`}>solved paper</a>. Note what the invariant does *not* need to say: if `x` started negative the loop would never stop, but partial correctness only constrains terminating runs, and the precondition `X ≥ 0` excludes that case anyway.
+
+### Fibonacci: an invariant that is too weak
+
+The second example from the lectures computes the `N`-th Fibonacci number, where `fib(1) = fib(2) = 1`, `fib(k) = fib(k − 1) + fib(k − 2)` for `k > 2`, and, for convenience, `fib(0) = 0`.
+
+```python
+# {1 ≤ n ∧ n = N}
+x = 0
+y = 1
+z = 1
+while z < n:
+    y = x + y
+    x = y - x
+    z = z + 1
+# {y = fib(N)}
+```
+
+The line `x = y - x` is a trick to avoid a temporary: after `y = x + y`, the difference `y − x` is the *old* value of `y`. (In idiomatic Python one would write `x, y = y, x + y`.) Tracing the loop:
+
+| iteration | 0 | 1 | 2 | 3 | 4 | 5 | 6 | … | N − 1 |
+|---|---|---|---|---|---|---|---|---|---|
+| `y` | 1 | 1 | 2 | 3 | 5 | 8 | 13 | … | fib(N) |
+| `x` | 0 | 1 | 1 | 2 | 3 | 5 | 8 | … | fib(N − 1) |
+| `z` | 1 | 2 | 3 | 4 | 5 | 6 | 7 | … | N |
+
+`z` counts iterations, `y` holds the current Fibonacci number and `x` the previous one. That suggests
+
+```text
+I  =  y = fib(z) ∧ x = fib(z − 1) ∧ z > 0
+```
+
+(with `z > 0` so that `fib(z − 1)` makes sense). Initialisation holds: `y = 1 = fib(1)` and `x = 0 = fib(0)`. Maintenance holds too: from `y = fib(z)` and `x = fib(z − 1)`, the new `y` is `fib(z − 1) + fib(z) = fib(z + 1)`, the new `x` is the old `y = fib(z)`, and `z` increases by one. So `I` is an invariant. But the exit obligation fails. At exit we know `I` and `¬(z < n)`, that is `z ≥ n`, and nothing connects `z` to `N`. The state `z = 5, n = 3, y = 5, x = 3` satisfies `I ∧ z ≥ n`, yet `y = 5 ≠ fib(3) = 2`.
+
+<Callout type="warning" title="A common mistake">
+
+An assertion can be a genuine invariant and still be useless. The exit obligation is part of the job: if `I ∧ ¬B` does not imply the postcondition, the invariant is too weak and must be strengthened, even though initialisation and maintenance went through.
+
+</Callout>
+
+What is missing is the knowledge that, when the loop stops, `z = N`. As in `find_max`, the fix is to add the bound on the counter, and also the fact that `n` still equals `N`. A loop invariant is the only information that survives the while rule, so any fact we need afterwards, even one about a variable the loop never touches, must be carried in it:
+
+```text
+I′  =  y = fib(z) ∧ x = fib(z − 1) ∧ z > 0 ∧ z ≤ n ∧ n = N
+```
+
+Initially `z = 1 ≤ n` by the precondition. The body runs only when `z < n`, so after `z = z + 1` we still have `z ≤ n`. At exit, `z ≤ n` and `z ≥ n` squeeze `z` to `n = N`, so `y = fib(N)`.
+
+<Fold title="Proof outline for the Fibonacci loop">
+
+<Proof lines={[
+  { a: "{ x = 0 ∧ y = 1 ∧ z = 1 ∧ 1 ≤ n ∧ n = N }" },
+  { i: "{ y = fib(z) ∧ x = fib(z − 1) ∧ z > 0 ∧ z ≤ n ∧ n = N }", j: "consequence" },
+  { c: "while z < n:" },
+  { a: "{ I′ ∧ z < n }", indent: 1 },
+  { a: "{ x + y = fib(z + 1) ∧ (x + y) − x = fib(z) ∧ z + 1 > 0 ∧ z + 1 ≤ n ∧ n = N }", indent: 1, j: "consequence: fib(z − 1) + fib(z) = fib(z + 1)" },
+  { c: "y = x + y", indent: 1, j: "assignment" },
+  { a: "{ y = fib(z + 1) ∧ y − x = fib(z) ∧ z + 1 > 0 ∧ z + 1 ≤ n ∧ n = N }", indent: 1 },
+  { c: "x = y - x", indent: 1, j: "assignment" },
+  { a: "{ y = fib(z + 1) ∧ x = fib((z + 1) − 1) ∧ z + 1 > 0 ∧ z + 1 ≤ n ∧ n = N }", indent: 1 },
+  { c: "z = z + 1", indent: 1, j: "assignment" },
+  { i: "{ y = fib(z) ∧ x = fib(z − 1) ∧ z > 0 ∧ z ≤ n ∧ n = N }", indent: 1, j: "invariant restored" },
+  { a: "{ I′ ∧ ¬(z < n) }", j: "while rule" },
+  { a: "{ y = fib(N) }", j: "consequence: z = n = N" },
+]} />
+
+The step `fib(z − 1) + fib(z) = fib(z + 1)` is the defining recurrence for `z + 1 > 2`, and for `z = 1` it is `fib(0) + fib(1) = 0 + 1 = 1 = fib(2)`, which is why the convention `fib(0) = 0` is convenient.
+
+</Fold>
+
+### Integer square root
+
+The third example, from the first lecture, finds the integer square root of `x`: the largest `s` with `s · s ≤ x`.
+
+```python
+# {x = X ∧ X ≥ 0}
+s = 0
+while (s + 1) * (s + 1) <= x:
+    s = s + 1
+# {s · s ≤ X ∧ X < (s + 1) · (s + 1)}
+```
+
+With `x = 10` the trace is:
+
+| iteration | `s` | `s · s` | `(s + 1) · (s + 1)` | test `≤ 10`? |
+|---|---|---|---|---|
+| 0 | 0 | 0 | 1 | yes |
+| 1 | 1 | 1 | 4 | yes |
+| 2 | 2 | 4 | 9 | yes |
+| 3 | 3 | 9 | 16 | no, stop |
+
+In every row `s · s ≤ 10`, and the loop stops at `s = 3`, the same answer as Python's `math.isqrt(10)`. The postcondition has two halves. `s · s ≤ X` says `s` is not too big, and it holds in every row, so it is the invariant (together with `x = X ∧ X ≥ 0`, which must be carried along). `X < (s + 1) · (s + 1)` says `s` is not too small, and it is exactly the negation of the loop test, which the while rule supplies at exit. This division of labour is common: the invariant carries the part of the postcondition that is true throughout, and the failed test supplies the rest. The full proof is on the <a href={`${import.meta.env.BASE_URL}hoare-logic/#example-integer-square-root`}>Hoare logic page</a>.
+
+### What the examples have in common
+
+In each case the invariant came from a table rather than from inspiration, and in each case it had two kinds of conjunct. One describes the *progress* of the computation (`max_so_far` is the maximum of the prefix, `y · x! = X!`, `y = fib(z)`, `s · s ≤ X`). The other records *bookkeeping* facts: bounds on the counter (`1 ≤ i ≤ n`, `z ≤ n`, `x ≥ 0`) and the values of unchanged variables (`n = N`, `x = X`). The bookkeeping conjuncts are the ones most often forgotten, and they are usually what the exit step needs.
+
+## Exercises: factorial and GCD
+
+The notebook ends with two exercises: write the specification and a checked loop invariant for each of these functions. Try them before opening the answers.
+
+```python
+def factorial(n):
+    assert n >= 0, "n must be non-negative"
+    result = 1
+    i = 1
+    while i <= n:
+        result = result * i
+        i = i + 1
+    return result
+
+def gcd(a, b):
+    assert a > 0 and b > 0, "Numbers must be positive"
+    x, y = a, b
+    while y != 0:
+        x, y = y, x % y
+    return x
+```
+
+This `factorial` counts *up*, unlike the lectures' version, so the invariant takes a different form: `result` holds the product of the numbers multiplied in so far, `1 · 2 · … · (i − 1)`.
 
 <Fold title="Answer: factorial">
 
 ```python
+import math
+
 def factorial(n):
     assert n >= 0
     result, i = 1, 1
@@ -188,16 +462,18 @@ def factorial(n):
     return result
 ```
 
-- **Init:** result = 1 = 0!, i = 1.
-- **Maintain:** (i−1)! · i = i!, then i grows, so result = (i−1)! again.
-- **Exit:** i ≤ n+1 and ¬(i ≤ n) give **i = n+1**, so result = n!.
-- **Variant:** `n + 1 − i` decreases, so it terminates.
+- **Initialisation:** `result = 1 = 0!` and `i = 1`, and `1 ≤ n + 1` because `n ≥ 0`.
+- **Maintenance:** `(i − 1)! · i = i!`, then `i` grows by one, so `result = (i − 1)!` again for the new `i`; and `i ≤ n` before the increment gives `i ≤ n + 1` after it.
+- **Exit:** `i ≤ n + 1` and `¬(i ≤ n)` give `i = n + 1`, so `result = n!`.
+- **Variant:** `n + 1 − i` decreases, so the loop terminates.
 
 </Fold>
 
 <Fold title="Answer: GCD">
 
 ```python
+import math
+
 def gcd(a, b):
     assert a > 0 and b > 0
     x, y = a, b
@@ -208,13 +484,22 @@ def gcd(a, b):
     return x
 ```
 
-- **Key fact:** gcd(x, y) = gcd(y, x mod y), so P is preserved.
-- **Exit:** y = 0 and gcd(x, 0) = x.
-- **Variant:** y strictly decreases, since 0 ≤ x mod y < y.
+- **Key fact:** `gcd(x, y) = gcd(y, x mod y)` for `y > 0`, so the invariant is preserved. Positivity is preserved too: the new `x` is the old `y`, which was non-zero, and `x % y ≥ 0`.
+- **Initialisation:** `x = a`, `y = b`, both positive.
+- **Exit:** `y = 0` and `gcd(x, 0) = x`, so `x = gcd(a, b)`.
+- **Variant:** `y` strictly decreases, since `0 ≤ x mod y < y`.
+
+On `gcd(48, 18)` the pairs `(x, y)` are `(48, 18), (18, 12), (12, 6), (6, 0)`, and the result is 6.
 
 </Fold>
 
-## Replay it
+## Summary
+
+A loop runs an unknown number of times, so instead of annotating each iteration we find one assertion, the loop invariant, that holds at every loop test. Three obligations make it useful: it holds initially, each run of the body preserves it when the test is true, and together with the failed test it implies the postcondition. These are exactly the premises of the Hoare-logic while rule combined with the rule of consequence, and they amount to an induction on the number of iterations. Termination is a separate question, answered by a variant that decreases on every iteration.
+
+In Python we can check an invariant at run time, with `all` for a `∀` statement and `any` for an `∃` statement, provided we remember that asserting a bare generator checks nothing. The same reasoning applies to `for` loops over `range`, and to nested loops such as bubble sort, where each loop has its own invariant. Finding an invariant is the creative part: tracing a table of iterations reveals what stays constant, typically "computed so far" combined with "remaining", and the exit obligation tells us when a true invariant is still too weak and needs a bound or an unchanged-variable fact added.
+
+## Check your understanding
 
 <Flashcards cards={[
   { q: "What is a loop invariant?", a: "A statement true **every time** the loop test is reached." },
@@ -226,6 +511,9 @@ def gcd(a, b):
   { q: "Does `range(2, 6)` include 6?", a: "**No**: 2 3 4 5." },
   { q: "Bubble sort outer invariant?", a: "After i passes, `arr[n-i:]` holds the **i largest, sorted**." },
   { q: "Summation invariant?", a: "`total = 1+…+(i−1) ∧ 1 ≤ i ≤ n+1`" },
+  { q: "Invariant for the lectures' factorial loop `while x != 0: y = y * x; x = x - 1`?", a: "`y · x! = X! ∧ x ≥ 0`: y is computed so far, x! remains." },
+  { q: "Why is `y = fib(z) ∧ x = fib(z − 1) ∧ z > 0` not enough for Fibonacci?", a: "It is an invariant, but at exit it gives no link between z and N. Add `z ≤ n ∧ n = N`." },
+  { q: "How do you find an invariant?", a: "Trace a table of iterations and look for the relationship that is the same in every row; then check it gives the post at exit." },
 ]} />
 
 <Quiz questions={[
@@ -234,6 +522,8 @@ def gcd(a, b):
   { q: "`list(range(5, 2))` is…", options: ["`[5, 4, 3]`", "`[]`", "`[2, 3, 4]`"], answer: 1, why: "Step defaults to +1, so nothing is produced." },
   { q: "Which are needed for **total** correctness of a while loop?", options: ["Init", "Maintain", "Exit", "Variant"], answer: [0, 1, 2, 3], why: "The while rule gives partial correctness; a variant adds termination." },
   { q: "The GCD loop variant is…", options: ["x", "y", "a + b"], answer: 1, why: "`0 ≤ x % y < y`, so y strictly decreases." },
+  { q: "Which obligation fails for the weak Fibonacci invariant?", options: ["Initialisation", "Maintenance", "Exit"], answer: 2, why: "It is a true invariant, but `I ∧ z ≥ n` does not imply `y = fib(N)`." },
+  { q: "In the integer square root loop, where does `X < (s + 1) · (s + 1)` come from at exit?", options: ["The invariant", "The negated loop test", "The precondition"], answer: 1, why: "The loop stops when `(s + 1) · (s + 1) ≤ x` is false." },
 ]} />
 
-<p class="sources">Sources: lec 2 Jupyter Notebook.ipynb, 13 Nov slides</p>
+<p class="sources">Sources: lec 2 Jupyter Notebook.ipynb, 13 Nov slides, Cambridge Hoare Logic lectures 1–2 (Pulte, 2022/23)</p>

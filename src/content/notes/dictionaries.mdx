@@ -1,27 +1,27 @@
 ---
 title: "Dictionaries"
-description: "Key → reference tables found by hashing. Hashable keys, [] vs get(), updates and live views."
+description: "How a dictionary finds a value from its key by hashing, which objects may be keys and why, and how to read, update and iterate over dictionaries safely."
 part: python
 order: 4
 ---
 import { Callout, Fold, Mermaid, Flashcards, Quiz } from '@/components/notes';
 
-<Callout type="tip" title="TL;DR">
+A list stores its elements by position, and we find an element by saying where it is: `student[2]` is the third element. That is fine when position means something, but very often it does not. If a student record is stored as `["Alice", 20, "Computer Science", 3.8, "New York"]`, the expression `student[2]` tells a reader nothing; they have to remember that index 2 happens to hold the major. A **dictionary** (Python's `dict`) stores data as **key-value pairs** instead, and we find a value by naming its key: `student["major"]`. The key documents what the value is, and, as we will see, the lookup is also much faster than searching a list.
 
-- A dict maps **key → reference**, found in **O(1)** by hashing.
-- Keys must be **hashable** (immutable); values can be anything.
-- `d[k]` needs `k ∈ d` (else `KeyError`); `d.get(k)` never fails.
+This page builds on the <a href={`${import.meta.env.BASE_URL}lists/`}>lists</a> page, in particular on the idea that a Python container holds *references* to objects rather than the objects themselves. We first look at what a dictionary is and how it finds a key so quickly, which explains the rules about what may be used as a key. We then treat reading and writing a dictionary as small contracts with preconditions and postconditions, in the style of the <a href={`${import.meta.env.BASE_URL}specifications/`}>specifications</a> page, and finish with removal, views and iteration.
 
-</Callout>
+## What a dictionary is
 
-## Find by key, not position
-
-`student[2]`: what is 2? `student["grade"]`: the **key** says what it is.
+A dictionary is a collection of key-value pairs in which each key appears at most once. The usual way to create one is a brace literal, with a colon between each key and its value:
 
 ```python
 student = {"name": "Alice", "age": 20, "grade": "A",
            "courses": ["Math", "Science"]}
 ```
+
+Here `"name"`, `"age"`, `"grade"` and `"courses"` are the keys, and `"Alice"`, `20`, `"A"` and the list `["Math", "Science"]` are the values. A useful analogy is a real dictionary: the key is the word we look up, and the value is its definition.
+
+As with a list, the dictionary does not contain the value objects themselves. Each entry pairs a key with a *reference* (an arrow) to a value object that lives elsewhere in memory. The picture to keep in mind is therefore a table of keys, each with an arrow leaving it:
 
 <Mermaid code={`flowchart LR
   s(["student"]) --> T
@@ -34,164 +34,312 @@ student = {"name": "Alice", "age": 20, "grade": "A",
   k2 --> v2["20"]
   k4 --> v4["list: Math, Science"]`} />
 
-- Each key appears **once** and holds an **arrow** to a value object.
-- **Insertion order** is kept (guaranteed since 3.7).
+Two further facts complete the description. First, keys are unique: storing a value under a key that is already present replaces the old value rather than adding a second entry. Second, a dictionary remembers the order in which its keys were first inserted, and iterating over it visits them in that order. This has been guaranteed by the language since Python 3.7; before that the order was arbitrary, and older material sometimes still describes dictionaries as unordered.
 
-## Hashing: O(1) lookup
+The `dict` constructor offers a second way to build a dictionary, from keyword arguments:
+
+```python
+empty = {}                       # an empty dict (an empty set is written set())
+also_empty = dict()
+teacher = dict(name="Mr. Smith", subject="Math", years_experience=5)
+# dict(2024="x")                 # SyntaxError: 2024 is not a valid name
+```
+
+With keyword arguments every key becomes a string, the name of the argument, so only keys that are valid Python identifiers can be written this way. Note also that `{}` is an empty dictionary, not an empty set, because dictionaries had the brace syntax first.
+
+## Hashing: why lookup is fast
+
+Suppose we stored the pairs of a dictionary in a plain list of `(key, value)` tuples. To find the value for a key we would have to compare the key with every stored key in turn, which takes time proportional to the number of entries, written **O(n)**. A dictionary avoids this search almost entirely. The technique is called **hashing**.
+
+A **hash function** turns an object into an integer, its *hash*. Python exposes it as the built-in `hash`. A dictionary keeps an internal array of *slots* (a **hash table**), and it stores each key in a slot chosen from the key's hash, in effect `hash(key) % table_size`, the remainder of the hash on division by the number of slots. To look a key up later, the dictionary computes the same hash, goes straight to the same slot, and checks that the key stored there is equal to the one it was given:
 
 <Mermaid code={`flowchart LR
   k["'age'"] -->|"hash"| h["8301956132205, differs per run"]
   h -->|"% 8"| slot["slot 5"]
   slot --> pair["'age' → 20"]`} />
 
-- Slot = `hash(key) % table_size`. Lookup repeats this: **O(1) average**.
-- Needs **equal keys ⇒ equal hashes**, and a hash that **never changes**.
-- So keys must be **immutable**.
+Computing a hash and indexing an array take the same time however many entries the dictionary holds, so lookup, insertion and deletion all take **O(1)** time on average, that is, constant time. The word "average" matters. Two different keys can have hashes that lead to the same slot; this is called a **collision**. When it happens Python stores the second key in another slot, found by a fixed probing sequence, and a lookup follows the same sequence until it finds the key or an empty slot. The table is also grown automatically when it becomes about two-thirds full, so that collisions stay rare. With a reasonable hash function the expected number of slots inspected stays small and constant; only in pathological cases, where many keys collide, does a lookup degrade towards O(n).
 
-<Fold title="Collisions & growth">
+The number in the diagram above is not fixed. For strings, Python mixes a random value into the hash each time the interpreter starts (a defence against attackers who choose keys that all collide), so `hash("age")` differs between runs. Small integers, by contrast, hash to themselves: `hash(20) == 20`. Nothing in a program should depend on particular hash values; only the two properties below matter.
 
-When two keys land in the same slot, Python probes **another slot**. The table **grows** as it fills, keeping lookups fast.
+### What hashing requires of keys
 
-</Fold>
+The scheme above works only if the hash function obeys two rules.
 
-## Creating & key rules
+1. **Equal keys must have equal hashes.** Formally, for all objects `a` and `b`, `a == b ⇒ hash(a) == hash(b)`, where `⇒` is read "implies". The lookup only ever inspects the slots reached from the hash of the key we give it. If two equal objects could have different hashes, then storing under one and looking up with the other would search the wrong part of the table, and a key that is present would not be found. The converse is not required: unequal keys may share a hash, which is exactly a collision, and the equality check after the hash match sorts those out.
+2. **A key's hash must never change while it is in the dictionary.** The slot was chosen from the hash at the moment of insertion. If the key's hash later changed, a lookup would compute the new hash, go to a different slot, and miss the entry, which would still sit in its old slot, impossible to find.
+
+The second rule is the reason dictionary keys must be **hashable**. An object is hashable if it has a hash value that never changes during its lifetime and can be compared for equality with other objects. For Python's built-in types this coincides with being **immutable**. Strings, integers, floats, booleans and `None` cannot be changed after creation, so their hashes are stable and they are hashable. A list can be changed in place, and its equality depends on its contents; if `[1, 2]` were used as a key and then had an element appended, it would no longer be equal to what it was when it was stored. Python therefore refuses to hash lists at all:
 
 ```python
-empty = {}          # empty DICT; empty set is set()
-teacher = dict(name="Mr. Smith", years=5)   # keys become str
-# dict(2024="x")  -> SyntaxError: not a valid name
+d = {}
+d[[1, 2]] = "x"          # TypeError: unhashable type: 'list'
+d[(1, 2)] = "x"          # fine: a tuple of hashable values
+d[(1, [2])] = "x"        # TypeError: unhashable type: 'list'
 ```
 
-| Hashable keys ✓ | Unhashable keys ✗ |
+The last line shows that immutability of the outer object is not enough. A tuple's hash is computed from the hashes of its elements, so a tuple is hashable only if all its elements are. The tuple `(1, [2])` cannot itself be changed, but the list inside it can, so it is rejected.
+
+| Hashable, may be keys | Unhashable, may not be keys |
 |---|---|
-| `str`, `int`, `float`, `bool` | `list`: `TypeError: unhashable type` |
-| `tuple` of hashables | `(1, [2])`: tuple holding a list |
+| `str`, `int`, `float`, `bool`, `None` | `list` (`TypeError: unhashable type`) |
+| a `tuple` whose elements are all hashable | a tuple containing a list, such as `(1, [2])` |
+|  | `dict`, `set` |
 
-Values can be **anything**: lists, dicts, functions…
+The restriction applies only to keys. Values are never hashed, so a value can be any object at all: a number, a list, another dictionary, even a function. Dictionaries whose values are dictionaries, such as `{"Bob": {"age": 21, "grade": 92}}`, are a common way to represent structured records.
 
-## Quiz: 1, True, 1.0
+### Equal keys of different types
+
+The rule "equal keys have equal hashes" has a consequence that surprises many people. In Python, `1 == 1.0` is true, and so is `1 == True`, because `bool` is a subclass of `int` with `True` behaving as 1. Since these three objects are equal, the rule forces them to have equal hashes, and indeed `hash(1)`, `hash(1.0)` and `hash(True)` are all 1. To a dictionary they are therefore the *same key*. What does the following print?
 
 ```python
 d = {1: 'a', True: 'b', 1.0: 'c'}
-print(d)   # ???
+print(d)
 ```
 
 <Fold title="Answer">
 
-**`{1: 'c'}`**
-
-- `1 == True == 1.0`, with equal hashes, so they're **one key**.
-- The **first key object** (`1`) is kept.
-- The **last value** (`'c'`) wins.
+It prints `{1: 'c'}`. The literal is evaluated from left to right, as three insertions into an empty dictionary. The first stores the key object `1` with value `'a'`. The second finds that `True` is equal to a key already present, so it is an update, not an insertion: the value becomes `'b'`, and the stored key object stays `1`. The third does the same with `1.0` and the value `'c'`. An update replaces the value but keeps the original key object, so the dictionary ends with the first key and the last value.
 
 </Fold>
 
-<Callout type="tip" title="Memory hook">
-**"First key stays, last value plays."**
-</Callout>
+The same thing happens with assignment: after `d = {1: 'a'}; d[True] = 'b'`, the dictionary is `{1: 'b'}` and `len(d)` is 1.
 
-## [] vs get(): two contracts
+## Reading values: two contracts
+
+There are two ordinary ways to read the value stored under a key, and they make different promises. It helps to state each as a contract, with a precondition that the caller must establish and a postcondition that the operation then guarantees.
+
+The subscript form `v = d[k]` has the precondition `k in d`. If the precondition holds, it guarantees that `v` is the value stored under `k`. If it does not hold, Python raises a `KeyError`, which ends the program unless it is caught. The method form `v = d.get(k, default)` has no precondition. It guarantees that `v` is the stored value if `k` is present and `default` otherwise; if no default is given, the default is `None`.
 
 ```python
+student = {"name": "Bob", "age": 22, "major": "Computer Science", "gpa": 3.8}
+
+student["name"]                        # 'Bob'
 student["phone"]                       # KeyError: 'phone'
 student.get("phone")                   # None
 student.get("phone", "Not provided")   # 'Not provided'
-"major" in student                     # `in` checks KEYS
+"major" in student                     # True: `in` tests the KEYS
 ```
 
-| Statement | Precondition | If k missing |
+| Statement | Precondition | Result if `k` is missing |
 |---|---|---|
-| `v = d[k]` | **k ∈ d** | raises `KeyError` |
-| `v = d.get(k, default)` | none | returns default / `None` |
+| `v = d[k]` | `k in d` | raises `KeyError` |
+| `v = d.get(k, default)` | none | returns `default` (or `None`) |
 
-## Values are shared
+Neither form is better in general; they suit different situations. When a missing key indicates a bug, `d[k]` is the right choice, because the `KeyError` reports the bug at the point where it occurs. When a missing key is a normal possibility, such as an optional field in a record, `get` with a sensible default expresses that directly. Testing `k in d` first and then using `d[k]` is the third option, and it establishes the precondition explicitly. The membership test `in` checks keys, not values, and takes O(1) time on average. Testing whether a *value* occurs, `x in d.values()`, has to look at every value and takes O(n) time.
+
+<Callout type="warning" title="A common mistake">
+
+`get` returns the stored value whenever the key is present, even if that value is `0`, `None`, `""` or `False`. Code such as `d.get(k) or "x"` therefore returns `"x"` for a key whose stored value is `0`, which is wrong; use `d.get(k, "x")`. Similarly, `d.get(k) is None` cannot tell a missing key apart from a key whose value is `None`. When that distinction matters, test `k in d`.
+
+</Callout>
+
+## Values are shared, not copied
+
+Because a dictionary stores references, reading a value with `d[k]` gives us a second name for the *same* object, not a copy of it. Two names for the same object are called **aliases**. What happens next depends on whether we change the object or the name.
 
 ```python
 student = {"name": "Bob", "age": [22, 24, 26]}
-ages = student["age"]   # SAME list object
-ages[1] = 0             # student["age"] -> [22, 0, 26]
-ages = [1]              # rebinding: student unaffected
+
+ages = student["age"]    # ages and student["age"] refer to the SAME list
+ages[1] = 0              # mutate that list: student["age"] is now [22, 0, 26]
+
+name = student["name"]   # name refers to the string 'Bob'
+name = "omitted"         # rebind name: student["name"] is still 'Bob'
+ages = [1]               # rebind ages: student["age"] is still [22, 0, 26]
 ```
 
 <Mermaid code={`flowchart LR
   a(["ages"]) --> L["[22, 0, 26]"]
   sk["student 'age'"] --> L`} />
 
-<Callout type="warning" title="Trap">
-**Mutating** through an alias changes the dict. **Rebinding** the alias doesn't.
-</Callout>
+The statement `ages[1] = 0` **mutates** the list: it changes the object that both arrows point at, so the change is visible through the dictionary. The statement `name = "omitted"`, by contrast, **rebinds** the name `name`: it makes that one name point at a different object and leaves the dictionary's arrow where it was. Strings cannot be mutated at all, so a string value can never be changed through an alias; only mutable values such as lists and dictionaries can. Rebinding `ages = [1]` likewise has no effect on the dictionary.
 
-## Updating: add or replace
+The same reasoning applies to the dictionary as a whole. After `d2 = d`, the names `d` and `d2` are aliases for one dictionary, and adding a key through either is visible through both. `d.copy()` or `dict(d)` creates a new dictionary with the same keys, but it is a **shallow copy**: its values are the same objects as before, so mutating a list value is still visible through both dictionaries. `copy.deepcopy(d)` copies the values recursively as well. These are exactly the alias, shallow-copy and deep-copy distinctions of the lists page.
 
-`d[k] = v` **adds** if `k` is new, **replaces** if it exists.
+## Updating a dictionary
+
+The assignment `d[k] = v` has two possible effects. If `k` is not yet a key, it **adds** a new pair and the dictionary grows by one. If `k` is already a key, it **replaces** the value and the size is unchanged; the key also keeps its original position in the insertion order.
 
 ```python
 s = {"name": "Alice", "age": 20}
-s["major"] = "Biology"   # added    -> len 3
-s["age"] = 21            # replaced -> len 3
-s.update({"age": 22, "minor": "Chem"})   # in place, returns None
+s["major"] = "Biology"   # added:    len(s) == 3
+s["age"] = 21            # replaced: len(s) == 3, 'age' is still second
 ```
 
-<Callout type="warning" title="Nested update">
-`s.update({"grades": {"english": 88}})` **replaces** the whole inner dict (math, science lost). Do `s["grades"].update({"english": 88})`.
-</Callout>
+### Specifying `d[k] = v`
 
-<Fold title="Specifying d[k] = v (Lecture 2 style)">
+Because the statement behaves differently in the two cases, it is a good exercise to write its specification precisely, in the style of the specifications page. We need to describe the dictionary before the statement, so we keep a copy of it in an auxiliary (ghost) variable `old`, used only by the assertions:
 
 ```python
-old = dict(d)            # ghost copy of the "before" state
+old = dict(d)                                        # ghost copy of the state before
 d[k] = v
-assert d[k] == v                                  # new value present
-assert len(d) == len(old) + (k not in old)        # +1 iff k was new
-assert all(d[j] == old[j] for j in old if j != k) # frame: nothing else changed
+assert d[k] == v                                     # the new value is present
+assert len(d) == len(old) + (k not in old)           # one more entry iff k was new
+assert all(d[j] == old[j] for j in old if j != k)    # nothing else changed
 ```
 
-</Fold>
+The third assertion is a **frame condition**: it says what the statement does *not* change. It is easy to forget, and without it the specification would allow an implementation that set `d[k]` correctly but also altered other entries. The second assertion uses the fact that `True` and `False` count as 1 and 0 in arithmetic. Together with the first and third assertions, it also rules out the deletion of any key, since every old key must still be present. In the notation of <a href={`${import.meta.env.BASE_URL}hoare-logic/`}>Hoare logic</a>, writing `D` for the dictionary's initial value, the specification reads
 
-## Removing
+```text
+{d = D}  d[k] = v  {d[k] = v ∧ keys(d) = keys(D) ∪ {k} ∧ ∀j ∈ keys(D). j ≠ k ⇒ d[j] = D[j]}
+```
 
-| Code | Effect | Missing key |
+where `∧` is "and", `∪` is set union, and `∀j ∈ keys(D).` is read "for every key `j` of `D`". The statement has no precondition beyond `k` being hashable.
+
+### Updating several keys
+
+`d.update(other)` performs `d[k] = other[k]` for every key of `other`, in order, so each key is added or replaced according to the same rule. It also accepts keyword arguments, as in `d.update(age=22)`. It changes `d` in place and returns `None`, so writing `d = d.update(...)` is a mistake that leaves `d` bound to `None`.
+
+```python
+s.update({"age": 22, "minor": "Chemistry", "graduation_year": 2024})
+# s == {'name': 'Alice', 'age': 22, 'major': 'Biology',
+#       'minor': 'Chemistry', 'graduation_year': 2024}
+```
+
+### Nested updates
+
+Since `update` assigns each value wholesale, it does not merge nested dictionaries. Consider
+
+```python
+s = {"name": "Alice", "grades": {"math": 85, "science": 90}}
+s.update({"grades": {"english": 88}})
+# s == {'name': 'Alice', 'grades': {'english': 88}}   math and science are gone
+```
+
+The call performs `s["grades"] = {"english": 88}`, which replaces the reference stored under `"grades"` with a reference to a new dictionary. The old inner dictionary is simply no longer referenced. To add a grade we must instead update the inner dictionary itself, which we reach through the outer one:
+
+```python
+s = {"name": "Alice", "grades": {"math": 85, "science": 90}}
+s["grades"].update({"english": 88, "history": 92})
+# s["grades"] == {'math': 85, 'science': 90, 'english': 88, 'history': 92}
+```
+
+Here `s["grades"]` evaluates to the inner dictionary object, and `update` mutates that object in place. This is the aliasing behaviour of the previous section put to use.
+
+## Removing entries
+
+Python offers several ways to remove entries, which differ in what they return and in what happens when the key is missing.
+
+```python
+grades = {"math": 85, "science": 92, "history": 78, "english": 88}
+removed = grades.pop("history")   # 78; grades no longer has 'history'
+grades.pop("art", None)           # None; nothing removed, no error
+del grades["math"]                # removes 'math', returns nothing
+grades.clear()                    # grades == {}
+del grades                        # removes the NAME grades
+# print(grades)                   # NameError: name 'grades' is not defined
+```
+
+| Code | Effect | If the key is missing |
 |---|---|---|
-| `d.pop(k)` | remove, **return** value | `KeyError` |
-| `d.pop(k, None)` | safe version | returns `None` |
-| `del d[k]` | remove | `KeyError` |
-| `d.clear()` | empty it | — |
-| `del d` | removes the **name** | then `NameError` |
+| `d.pop(k)` | removes `k` and returns its value | raises `KeyError` |
+| `d.pop(k, default)` | as above | returns `default` |
+| `del d[k]` | removes `k` | raises `KeyError` |
+| `d.popitem()` | removes and returns the most recently inserted pair | raises `KeyError` if `d` is empty |
+| `d.clear()` | removes every entry; `d` is now empty | not applicable |
+| `del d` | removes the name `d`, not just its contents | later uses raise `NameError` |
 
-## Views, loops & dict vs list
+As with reading, `pop(k)` and `del d[k]` have the precondition `k in d`, and `pop(k, default)` has none. The difference between `d.clear()` and `del d` is the difference between mutating an object and unbinding a name: after `d.clear()` the empty dictionary still exists, and any alias of it sees it empty; after `del d` the dictionary is untouched, and only the name `d` has gone.
+
+## Views and iteration
+
+The methods `keys()`, `values()` and `items()` return **views** of a dictionary. A view is not a copy of the keys or values at the moment of the call. It is a window onto the dictionary itself, so it reflects any later changes:
 
 ```python
 inv = {"apples": 10, "bananas": 5}
-ks = inv.keys()          # also .values(), .items()
+ks = inv.keys()
 inv["kiwis"] = 3
-print(ks)   # dict_keys(['apples', 'bananas', 'kiwis'])  LIVE view
-for name, n in inv.items(): ...   # insertion order
+print(ks)          # dict_keys(['apples', 'bananas', 'kiwis'])
+print(len(ks))     # 3
 ```
 
-- Views are **live windows**, not copies.
-- Changing size while looping: `RuntimeError`. Loop over `list(d)` instead.
-- Dict lookup by key is **O(1)**; `grades[names.index("Bob")]` with parallel lists is **O(n)** and can drift.
+If we want a snapshot that will not change, we make one explicitly with `list(inv.keys())`, or simply `list(inv)`. Views of keys also support set operations, so `a.keys() & b.keys()` gives the keys two dictionaries have in common.
 
-## Replay it
+Iterating over a dictionary directly, as in `for k in d`, visits its keys. To visit pairs we iterate over `d.items()` and unpack each pair; to visit only values we use `d.values()`. All three visit entries in insertion order.
+
+```python
+scores = {"Alice": 85, "Bob": 92, "Charlie": 78}
+for name in scores:                 # keys: Alice, Bob, Charlie
+    ...
+for name, score in scores.items():  # pairs, unpacked into two names
+    ...
+for score in scores.values():       # 85, 92, 78
+    ...
+```
+
+### Changing a dictionary while iterating over it
+
+Iteration walks through the dictionary's internal table one entry at a time. If a key is added or removed during the walk, the table may be reorganised underneath the loop, and entries could be skipped or visited twice. Python does not try to guess what was intended. It detects that the dictionary changed size and raises an error:
+
+```python
+d = {"a": 1, "b": 2, "c": 3}
+for k in d:
+    if d[k] < 3:
+        del d[k]    # RuntimeError: dictionary changed size during iteration
+```
+
+The usual remedy is to iterate over a snapshot of the keys, which the loop owns and which the deletions do not affect:
+
+```python
+for k in list(d):
+    if d[k] < 3:
+        del d[k]
+```
+
+An alternative is to build a new dictionary with a comprehension, `d = {k: v for k, v in d.items() if v >= 3}`. Assigning new values to *existing* keys during a loop, such as `d[k] = d[k] * 2`, does not change the size and is allowed.
+
+## Dictionaries versus lists
+
+We can now say precisely why a dictionary is often a better choice than a list. Suppose student data is kept in parallel lists:
+
+```python
+names  = ["Alice", "Bob", "Charlie"]
+grades = [85, 92, 78]
+bob_grade = grades[names.index("Bob")]   # 92
+```
+
+There are two problems. `names.index("Bob")` searches the list from the start, which takes O(n) time. And the representation relies on the two lists staying aligned: if an element is inserted into or removed from one list but not the other, every later lookup silently returns the wrong student's grade. With a dictionary of records, `students["Bob"]["grade"]` finds the record in O(1) average time, and each grade is stored with its student, so there is nothing to keep aligned.
+
+```python
+students = {"Alice":   {"age": 20, "grade": 85},
+            "Bob":     {"age": 21, "grade": 92},
+            "Charlie": {"age": 19, "grade": 78}}
+bob_grade = students["Bob"]["grade"]     # 92
+```
+
+Lists remain the right choice when order and position are the point, for example a sequence of measurements or a queue of tasks. Dictionaries are the right choice when data is looked up by a meaningful label.
+
+## Summary
+
+A dictionary maps keys to references to values. It finds a key by hashing: the key's hash selects a slot in an internal table, so lookup, insertion and deletion take constant time on average, independent of the dictionary's size. Hashing works only if equal keys have equal hashes and a key's hash never changes, which is why keys must be hashable. For built-in types this means immutable, all the way down: a tuple qualifies only if its elements do. Equal keys of different types, such as `1`, `True` and `1.0`, are the same key; an update keeps the first key object and stores the last value.
+
+Reading and writing are best thought of as contracts. `d[k]` requires `k in d` and raises `KeyError` otherwise, while `d.get(k, default)` has no precondition. `d[k] = v` adds or replaces, and its full specification needs a ghost copy of the old dictionary and a frame condition saying that nothing else changes. Because values are references, mutating a value through an alias changes the dictionary, while rebinding the alias does not; for the same reason `update` replaces a nested dictionary rather than merging into it. Views reflect the live dictionary, iteration follows insertion order, and a dictionary must not change size while it is being iterated over, so we iterate over a snapshot instead.
+
+## Check your understanding
 
 <Flashcards cards={[
-  { q: "Average lookup cost in a dict?", a: "**O(1)**, via hashing." },
-  { q: "Why must keys be immutable?", a: "Their **hash must never change**, or the key gets lost." },
-  { q: "`{}` is…", a: "An empty **dict**. Empty set is `set()`." },
-  { q: "`{1: 'a', True: 'b', 1.0: 'c'}`?", a: "`{1: 'c'}`: first key kept, last value wins." },
-  { q: "Precondition of `d[k]`?", a: "`k ∈ d`, else `KeyError`." },
-  { q: "`d.get(k)` when k is missing?", a: "`None` (or the given default)." },
-  { q: "What does `update()` return?", a: "`None`: it mutates in place." },
-  { q: "Are `d.keys()` views copies?", a: "**No**, they're live and reflect later changes." },
-  { q: "Safe way to delete while looping?", a: "Loop over a snapshot: `for k in list(d): ...`" },
+  { q: "Average cost of looking up a key in a dict?", a: "**O(1)**: the key's hash selects a slot directly, with no search through the entries." },
+  { q: "Why must equal keys have equal hashes?", a: "A lookup only inspects the slots reached from the hash. If equal keys hashed differently, looking up with one would miss an entry stored under the other." },
+  { q: "Why must keys be hashable (immutable)?", a: "The slot is chosen from the hash at insertion time. If the key's hash **changed** later, lookups would go to the wrong slot and the entry would be lost." },
+  { q: "Is `(1, [2])` a valid key?", a: "No. A tuple is hashable only if all its elements are, and the list inside is not." },
+  { q: "`{}` is…", a: "An empty **dict**. The empty set is `set()`." },
+  { q: "`{1: 'a', True: 'b', 1.0: 'c'}`?", a: "`{1: 'c'}`: the three keys are equal, the first key object is kept and the last value is stored." },
+  { q: "Precondition of `d[k]`?", a: "`k in d`; otherwise `KeyError`." },
+  { q: "`d.get(k)` when `k` is missing?", a: "`None`, or the default if one is given." },
+  { q: "What does `update()` return?", a: "`None`: it changes the dictionary in place." },
+  { q: "Are `d.keys()` views copies?", a: "**No**. They are live views and reflect later changes." },
+  { q: "Safe way to delete keys while looping?", a: "Loop over a snapshot: `for k in list(d): ...`" },
 ]} />
 
 <Quiz questions={[
-  { q: "`print({1: 'a', True: 'b', 1.0: 'c'})`", options: ["`{1: 'a', True: 'b', 1.0: 'c'}`", "`{1: 'c'}`", "`{1.0: 'c'}`", "`{True: 'b'}`"], answer: 1, why: "All three keys are equal; first key object stays, last value wins." },
-  { q: "Which are valid dict keys?", options: ["`(1, 2)`", "`[1, 2]`", "`'id'`", "`(1, [2])`"], answer: [0, 2], why: "Lists, and tuples containing lists, are unhashable." },
-  { q: "`s = {'g': {'m': 85}}; s.update({'g': {'e': 88}})`. Now `s['g']` is…", options: ["`{'m': 85, 'e': 88}`", "`{'e': 88}`", "`{'m': 85}`"], answer: 1, why: "`update` replaces the value for key `'g'` wholesale." },
-  { q: "`d = {'a': 1}; d['a'] = 2; d['b'] = 3`. `len(d)`?", options: ["`1`", "`2`", "`3`"], answer: 1, why: "`'a'` was replaced, only `'b'` was added." },
-  { q: "Deleting keys inside `for k in d:` raises…", options: ["`KeyError`", "`RuntimeError`", "nothing"], answer: 1, why: "Dictionary changed size during iteration." },
+  { q: "`print({1: 'a', True: 'b', 1.0: 'c'})`", options: ["`{1: 'a', True: 'b', 1.0: 'c'}`", "`{1: 'c'}`", "`{1.0: 'c'}`", "`{True: 'b'}`"], answer: 1, why: "All three keys are equal with equal hashes, so later entries update the first. The first key object stays and the last value is stored." },
+  { q: "Which are valid dict keys?", options: ["`(1, 2)`", "`[1, 2]`", "`'id'`", "`(1, [2])`"], answer: [0, 2], why: "Lists are unhashable, and so is any tuple that contains a list." },
+  { q: "`s = {'g': {'m': 85}}; s.update({'g': {'e': 88}})`. Now `s['g']` is…", options: ["`{'m': 85, 'e': 88}`", "`{'e': 88}`", "`{'m': 85}`"], answer: 1, why: "`update` replaces the value stored under `'g'` wholesale; it does not merge the inner dictionaries." },
+  { q: "`d = {'a': 1}; d['a'] = 2; d['b'] = 3`. `len(d)`?", options: ["`1`", "`2`", "`3`"], answer: 1, why: "`'a'` was replaced and only `'b'` was added." },
+  { q: "`d = {'x': [1, 2]}; y = d['x']; y.append(3)`. Now `d['x']` is…", options: ["`[1, 2]`", "`[1, 2, 3]`", "`[3]`"], answer: 1, why: "`y` is an alias for the list stored in `d`, and `append` mutates that list." },
+  { q: "`d = {'k': 0}`. What is `d.get('k', 5)`?", options: ["`0`", "`5`", "`None`"], answer: 0, why: "The key is present, so `get` returns the stored value, even though it is falsy." },
+  { q: "Deleting keys inside `for k in d:` raises…", options: ["`KeyError`", "`RuntimeError`", "nothing"], answer: 1, why: "The dictionary changed size during iteration." },
 ]} />
 
-<p class="sources">Sources: lec 6 - dictionaries.ipynb, 17 Nov slides</p>
+<p class="sources">Sources: lec 6 - dictionaries.ipynb, 17 Nov slides, lab08_assignment.pdf</p>

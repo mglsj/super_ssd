@@ -1,24 +1,44 @@
 ---
 title: "Quiz 2: All 20 Questions Solved"
-description: "Twenty multiple-choice questions on Python, specs, invariants, copying, functions, dicts and AVL trees, with the reason behind each answer."
+description: "The twenty multiple-choice questions of Quiz 2 on Python, specifications, invariants, copying, functions, dictionaries and AVL trees, with the ideas behind them explained."
 part: exam
 order: 2
 ---
 import { Callout, Fold, Quiz } from '@/components/notes';
 
-<Callout type="tip" title="TL;DR">
+Quiz 2 had twenty multiple-choice questions worth two marks each, and every question has exactly one correct option. They cover almost the whole first half of the course: how Python runs programs and checks types, how specifications and loop invariants describe correctness, how names, lists, functions and dictionaries share objects, and what makes a tree a valid AVL tree. This page groups the questions by topic. Each group opens with a short account of the ideas the questions test, so that the answers can be worked out rather than remembered, followed by the code the questions refer to and an interactive quiz. Click an option to see whether it is right and why. The full answer key is at the bottom of the page.
 
-- 20 MCQs, 2 marks each. Every answer is one option.
-- Most-missed ideas: **dynamic ≠ strong typing** (Q4), **shallow copies share nested lists** (Q13), **dict values are shared, not copied** (Q17), **no positional argument after a keyword one** (Q14).
-- Try each block first, then read the reason under each answer.
-
-</Callout>
-
-<Callout type="note" title="How to use this page">
-Each section shows any code the questions need, then a small quiz. Click an option to see whether you're right and why. The full answer key is at the bottom.
-</Callout>
+The questions most often answered wrongly were Q4 (dynamic typing is not the same as strong typing), Q13 (shallow copies share nested lists), Q17 (a dictionary hands out its values, not copies of them) and Q14 (a positional argument may not follow a keyword argument). The explanations below spend most time on these.
 
 ## Python basics (Q1–Q8)
+
+### The abstract machine and kinds of error
+
+A Python program does not describe what the hardware does. It describes the behaviour of an **abstract machine**, the model of computation the language defines, in which names refer to objects, objects have types, and memory is allocated and freed automatically. The interpreter maps this model onto the real ("exact") machine. The benefit is that we reason at a higher level, about names and objects rather than registers and addresses. The cost is that we give up direct control of the hardware, and Python is neither faster nor more memory-efficient than a language closer to the machine. That is the point of Q1. The <a href={`${import.meta.env.BASE_URL}python-basics/`}>Python basics</a> page develops this model.
+
+Errors fall into kinds according to when and how they show up. A **syntax error** means the text is not a well-formed program, so Python refuses to run any of it. A **runtime error** means the program is well-formed but something goes wrong while it runs, and an exception such as `TypeError` or `KeyError` is raised. A **logical** (or **semantic**) error is the most dangerous kind: the program runs to completion without complaint but computes the wrong thing. Writing `area = 3.14 * radius` for the area of a circle (Q2) is a logical error, since nothing crashes and the result is simply wrong. Only a specification, a test or a careful reader catches such errors.
+
+### Syntax and BNF
+
+What counts as a well-formed program is defined by a **grammar**, usually written in **BNF** (Backus–Naur form). A grammar is a set of **production rules** of the form `name ::= alternatives`, read "a *name* is one of these alternatives". Names defined by rules are **non-terminals**, such as `expr` or `stmt`. The literal symbols that actually appear in program text, such as `+`, `while` or a digit, are **terminals**. For example, `expr ::= number | expr "+" expr` says that an expression is a number or two expressions joined by `+`. A grammar says only which texts are programs, that is, it defines **syntax**. It says nothing about what a program *means* when it runs, which is its **semantics**. That separation is what Q3 tests.
+
+### Dynamic and strong typing
+
+Q4 and Q5 concern two properties of a type system that are often confused because they are independent of each other.
+
+**Dynamic typing** is about *when* types are checked and *what has* a type. In Python a name has no type of its own; only the object it currently refers to has one. So the same name may refer to an `int` now and a `str` later, and type errors are detected when an operation actually runs. The opposite is static typing, as in C or Java, where each variable has a declared type that is checked before the program runs.
+
+**Strong typing** is about *whether* the language silently converts between types when they are mixed. Python is strongly typed: `"5" + 5` raises `TypeError: can only concatenate str (not "int") to str`, because Python will not guess whether you meant string concatenation or arithmetic. JavaScript is weakly typed and returns `"55"`. Python is therefore both dynamic and strong. The wrong options in Q4 mix the two axes up, for example by tying "dynamic" to implicit conversion.
+
+Type hints such as `def greet(name: str) -> str` do not change any of this. The interpreter records the hints but does not enforce them, so `greet(42)` runs and returns `"Hello, 42"` (the f-string formats any object). Hints are read by separate tools such as mypy, which check them before the program runs. That is Q6.
+
+### Expressions, statements and lambdas
+
+An **expression** produces a value, for example `x + 1` or `f(3)`, and can appear anywhere a value is expected. A **statement** performs an action and produces no value, for example `x = 5` or `while …:`. Ordinary assignment `=` is a statement, so it cannot appear inside parentheses as if it were a value: `(x = 5)` is a syntax error. The **walrus operator** `:=`, added in Python 3.8, is an assignment *expression*: `(x := 5)` assigns 5 to `x` and also evaluates to 5, so `result1` becomes 5. That is Q7.
+
+A **lambda** is an anonymous function whose body is a single expression, such as `lambda x: x * 2`. Because it has no name and no statements, it suits short functions that are used once, typically passed to `map`, `filter` or `sorted`. Anything with several conditions, loops, recursion or documentation is clearer as a normal `def` (Q8). The <a href={`${import.meta.env.BASE_URL}functions/`}>functions</a> page covers both.
+
+### The questions
 
 **Q2:** the formula is written as `area = 3.14 * radius` instead of `area = 3.14 * radius ** 2`.
 
@@ -52,7 +72,31 @@ result2 = (x = 5)
   { q: "Which is a good use of a **lambda**?", options: ["A complex function with several conditions and loops", "A small anonymous function passed to `map()` or `filter()`", "A recursive function", "A class method with a long docstring"], answer: 1, why: "A lambda is one expression with no name: ideal for short throwaway functions like the key or transform in `map` / `filter` / `sorted`." },
 ]} />
 
-## Correctness: specs and invariants (Q9–Q12)
+## Correctness: specifications and invariants (Q9–Q12)
+
+### Ghost variables
+
+A postcondition often needs to compare the final state with the initial one: a swap must leave `x` holding the *old* value of `y`. But by the time the postcondition is checked, the old values have been overwritten. The solution, explained on the <a href={`${import.meta.env.BASE_URL}specifications/`}>specifications</a> page, is to copy the initial values into extra names at the start, `original_x, original_y = x, y` in Q9, and never touch them again. These are **ghost** (or auxiliary) variables. They play no part in computing the result. Their only purpose is to let the final `assert` refer to the starting values, exactly as the auxiliary variables `X` and `Y` do in the Hoare triple `{x = X ∧ y = Y} swap {x = Y ∧ y = X}`.
+
+### Strong and weak specifications
+
+A specification is **stronger** when it rules out more wrong answers. The test for whether a set of assertions is strong enough is to ask whether any *incorrect* result could pass all of them. For `second_largest(a, b, c)` with distinct inputs (Q10), consider the three conditions `result in {a, b, c}`, `result != max(a, b, c)` and `result >= min(a, b, c)`. The first says the result is one of the inputs. The second excludes the largest. The third says the result is at least the smallest, and since the inputs are distinct, the only input that is neither the largest nor below the smallest is the middle one. All three together therefore pin the result down uniquely. Drop any one and a wrong answer passes: without the first, a value that is not an input at all, such as the number halfway between the smallest and largest, passes; without the second, the maximum passes; without the third, the minimum passes. This is the same reasoning as the `max_of_three` example on the specifications page.
+
+### The while rule and loop invariants
+
+A **loop invariant** is an assertion that holds before the loop starts and after every iteration. The <a href={`${import.meta.env.BASE_URL}hoare-logic/`}>Hoare logic</a> while rule
+
+```text
+       {P ∧ B} C {P}
+─────────────────────────────
+{P} while B do C {P ∧ ¬B}
+```
+
+has one premise: if the invariant `P` and the loop test `B` both hold before the body `C`, then `P` holds again after it. That is precisely what must be proved about the body in Q11. Nothing in the rule says the body terminates, runs in constant time or sets variables to their final values; termination is a separate question, not part of partial correctness. For `find_max`, the invariant says `max_so_far` is the maximum of the first `i` elements. The body compares one more element and increments `i`, which keeps that true. When the loop stops, `i = n`, so `max_so_far` is the maximum of the whole list. The <a href={`${import.meta.env.BASE_URL}loop-invariants/`}>loop invariants</a> page works through several such proofs.
+
+Q12 asks the same question for Euclid's algorithm, whose invariant is `gcd(x, y) == gcd(a, b)`. Preservation requires a fact about numbers: for `y ≠ 0`, `gcd(x, y) = gcd(y, x mod y)`. This holds because `x mod y = x − q·y` for some integer `q`, so any number that divides both `x` and `y` also divides `x mod y`, and any number that divides both `y` and `x mod y` also divides `x`. The two pairs have the same common divisors and hence the same greatest one. Commutativity of gcd and the bound `gcd(x, y) ≤ min(x, y)` are true but do not explain why one step preserves the invariant. At exit `y = 0`, and `gcd(x, 0) = x`, so the function returns `gcd(a, b)`.
+
+### The questions
 
 **Q9:**
 
@@ -102,6 +146,30 @@ def gcd(a, b):
 ]} />
 
 ## Lists, functions and dictionaries (Q13–Q18)
+
+### Names, objects and shallow copies
+
+Every question in this group follows from one fact about Python's abstract machine: a name, a list slot or a dictionary value holds a *reference* to an object, not the object itself. Two references can point to the same object, and a change made through one is then visible through the other. The <a href={`${import.meta.env.BASE_URL}lists/`}>lists</a> page draws the memory diagrams.
+
+Copying a list with `.copy()`, a full slice `[:]` or `list(...)` makes a **shallow copy**: a new outer list whose slots refer to the *same* element objects as the original. For a list of numbers this is indistinguishable from a full copy, because numbers cannot be changed in place. But in Q13 the third element is itself a list, `[3, 4]`. All four outer lists hold a reference to that one inner list, so `copy_a[2][1] = 99` changes the inner list that `original`, `copy_b` and `copy_c` also refer to, and all four show `[1, 2, [3, 99]]`. Replacing a whole slot, such as `copy_a[0] = 7`, would affect only `copy_a`. To copy the nested lists too, use `copy.deepcopy`, which makes a **deep copy** by copying recursively.
+
+The same fact explains Q17. `student["age"]` returns a reference to the list stored in the dictionary, not a copy of it, so `std_age` and `student["age"]` name the same list. Setting `std_age[1] = 0` changes that list, and the dictionary sees `[22, 0, 26]`.
+
+### Mutating and rebinding
+
+When a function is called, each parameter becomes a new local name bound to the object passed in. What happens next depends on what the function does with the name. **Mutating** the object, as `data.append(value)` does, changes the shared object, so the caller sees the change. **Rebinding** the name, as `value = value + 1` does, makes the local name refer to a new object and leaves the caller's object untouched. Integers are immutable, so arithmetic on them always creates a new object and can only ever rebind. In Q15, therefore, `original_list` becomes `[1, 2, 3, 10]` while `original_num` stays 10. The returned `result_num` is 11, but that is a different object in a different name.
+
+### Arguments and first-class functions
+
+A call may pass arguments by position, by keyword (`width=8`), or both. Python's rule is that all positional arguments come first, because once a keyword argument has appeared there is no longer a well-defined "next position" to fill. A call such as `create_rectangle(length=10, 5, "blue")` therefore breaks the grammar of calls and is rejected with `SyntaxError: positional argument follows keyword argument` before anything runs (Q14). Mixing in the allowed order, `create_rectangle(10, color="orange", width=7)`, is fine, and keyword arguments may come in any order among themselves.
+
+Functions in Python are **first-class values**: a function is an object like any other, so it can be stored in a list, passed as an argument or returned. In Q16, `operations[1]` evaluates to the function object `square` (lists are indexed from 0), and the following `(5)` calls it, giving 25. The <a href={`${import.meta.env.BASE_URL}functions/`}>functions</a> page covers argument passing and first-class functions in more detail.
+
+### Dictionary access
+
+The <a href={`${import.meta.env.BASE_URL}dictionaries/`}>dictionaries</a> page lists the ways to read and write a dictionary, and they differ in how they treat a missing key. Subscripting, `d[k]`, requires `k` to be present and raises `KeyError` otherwise. `d.get(k, default)` never raises and returns the default for a missing key. Assignment `d[k] = v` adds the key if it is missing and replaces its value if it is present, and `d.update(other)` does the same for several keys at once. Only the first of these raises for an absent key (Q18).
+
+### The questions
 
 **Q13:**
 
@@ -170,6 +238,30 @@ std_age[1] = 0        # Q17 only
 
 ## AVL trees (Q19–Q20)
 
+### What makes a tree a valid AVL tree
+
+An **AVL tree** is a binary search tree that keeps itself balanced, so that searches, inserts and deletes take time proportional to `log n`. Each node stores its key, its two children and its **height** (a leaf has height 1 and an empty subtree height 0). As the <a href={`${import.meta.env.BASE_URL}recursion-bst-avl/`}>recursion, BST and AVL</a> page explains, a tree is a valid AVL tree when three separate conditions hold at every node:
+
+- **BST order**: every key in the left subtree is smaller than the node's key, and every key in the right subtree is larger.
+- **Correct heights**: the stored height equals 1 plus the larger of the two children's heights.
+- **Balance**: the **balance factor**, the left subtree's height minus the right subtree's, is −1, 0 or 1.
+
+A checker is only as good as the conditions it actually verifies. The function in Q19 checks the balance factor, but it computes that factor with `get_balance`, which reads the *stored* heights. If an insertion forgets to update a height, the stored values are wrong and the balance check is checking the wrong numbers. Nothing in the function recomputes a height from the children, so correct height calculation is the property it does not verify.
+
+The function has a second weakness, which was not among the options. It compares each node only with its immediate children, but BST order is a condition on whole subtrees.
+
+<Callout type="warning" title="A common mistake in Q19">
+Checking only parent and child is **not** enough for a BST. In the tree `5 → (2 → (1, 6), 8)`, every parent-child pair is ordered, but 6 sits in the left subtree of 5. A full check passes down the allowed range (`lo`, `hi`). See <a href={`${import.meta.env.BASE_URL}recursion-bst-avl/`}>Recursion, BST & AVL</a>.
+</Callout>
+
+The correct checker computes each subtree's real height recursively and passes down the interval of keys the subtree may contain. This is the `check_avl` function of Lab 08, discussed on the <a href={`${import.meta.env.BASE_URL}property-based-testing/`}>property-based testing</a> page.
+
+### Choosing the right assertion
+
+Q20 is about choosing a postcondition for insertion. The candidates differ in strength. Checking that the root's value is not `None`, or that the inserted value can be found, confirms something true of any correct insert, but a tree that has lost its balance or its order would pass both. Checking that the height went up by exactly one is not even true of a correct insert: most inserts leave the height unchanged, and a rotation can absorb the extra level. Only `validate_avl_node(root)` checks the balance and order properties at every node, so it is the best of the four, even with the weaknesses noted for Q19.
+
+### The questions
+
 **Q19:**
 
 ```python
@@ -197,9 +289,11 @@ def validate_avl_node(node):
   { q: "Q20: after an insertion, which assertion **best** checks that the tree is still a BST and an AVL tree?", options: ["`assert root['value'] is not None`", "`assert search_node(root, inserted_value) is not None`", "`assert validate_avl_node(root) == True`", "`assert get_height(root) == old_height + 1`"], answer: 2, why: "Only C checks the balance and order properties at every node. B only checks the value is present. D is false in general: most inserts don't change the height, and a rotation can keep it the same." },
 ]} />
 
-<Callout type="warning" title="Trap in Q19">
-Checking only parent and child is **not** enough for a BST. In the tree `5 → (2 → (1, 6), 8)`, every parent-child pair is ordered, but 6 sits in the left subtree of 5. A full check passes down the allowed range (`lo`, `hi`). See <a href={`${import.meta.env.BASE_URL}recursion-bst-avl/`}>Recursion, BST & AVL</a>.
-</Callout>
+## Summary
+
+Most of the quiz reduces to a few ideas. Python runs on an abstract machine in which names refer to objects; its types belong to objects, are checked at run time (dynamic) and are not silently converted (strong), and type hints are advice for tools rather than rules for the interpreter. The grammar fixes what is syntactically valid, which is why `(x = 5)` and a positional argument after a keyword argument are rejected before anything runs.
+
+Because names, list slots and dictionary values hold references, sharing is everywhere. Shallow copies share nested objects, a dictionary hands out its stored list rather than a copy, and a function can change a caller's list by mutating it but cannot change a caller's integer by rebinding a local name. On the correctness side, ghost variables let a postcondition refer to old values, a specification is strong when no wrong answer can satisfy it, and the while rule asks only that the body preserve the invariant. The AVL questions combine the two: a checker is a specification, and it is only as strong as the conditions it really verifies, which for an AVL tree means order over whole subtrees, recomputed heights and balance at every node.
 
 ## Answer key
 

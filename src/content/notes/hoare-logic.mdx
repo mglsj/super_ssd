@@ -1,181 +1,344 @@
 ---
 title: "Hoare Logic"
-description: "Prove code correct with {P} S {Q} and five rules. Reason backwards, one line at a time."
+description: "How Hoare triples specify what a program does, and how a handful of inference rules let us prove a program meets its specification."
 part: reasoning
 order: 3
 ---
 import { Callout, Fold, Rules, Rule, Proof, Mermaid, Flashcards, Quiz } from '@/components/notes';
 
-<Callout type="tip" title="TL;DR">
+On the <a href={`${import.meta.env.BASE_URL}specifications/`}>specifications</a> and <a href={`${import.meta.env.BASE_URL}loop-invariants/`}>loop invariants</a> pages we wrote down what a function should do with `assert` statements, and checked those assertions by running the code. Running code can only ever check the inputs we happen to try. **Hoare logic** goes one step further: it is a formal system for *proving* that a program meets its specification for every possible input. It was introduced by Tony Hoare in 1969, building on earlier work by Robert Floyd, and it is still an active research area: it underlies verification tools such as Why3, Boogie and Facebook's Infer, and the proof of the seL4 operating-system kernel.
 
-- `{P} S {Q}`: if P is true before S runs, Q is true after (if S finishes).
-- **Assignment goes backwards:** take the post, swap `x` for `E`.
-- **Loops need an invariant**, which must be true before, during and after.
+The central idea is simple. We describe a program by what must be true of the program's variables before it runs, and what will then be true after it finishes. A small set of rules, one for each kind of statement, tells us how such descriptions combine. A proof that a program is correct is then a chain of rule applications, much like a proof in algebra. This page builds that system up piece by piece: first what a specification means, then each rule and why it is the right one, and finally how the rules are used together on real loops.
+
+## Specifications as Hoare triples
+
+A **Hoare triple** (also called a *partial correctness triple*) is written
+
+```text
+{P} C {Q}
+```
+
+Here `C` is a piece of program (a *command*: one statement or a sequence of statements), and `P` and `Q` are **assertions**, logical statements about the values of the program's variables. `P` is the **precondition**: it describes the state of the variables before `C` runs. `Q` is the **postcondition**: it describes the state after `C` finishes. For example,
+
+```text
+{x = 1}  x = x + 1  {x = 2}
+```
+
+says that if `x` holds 1 and we run `x = x + 1`, then afterwards `x` holds 2.
+
+The assertions are built from ordinary boolean expressions over the program's variables, such as `x > 0` or `y = x + 1`, combined with the usual logical connectives. We write `∧` for "and", `∨` for "or", `¬` for "not", `⇒` for "implies", and `∀` and `∃` for "for all" and "there exists". For instance `x = y + 1 ∧ y > 0` describes every state in which `y` is positive and `x` is one more than `y`. An assertion therefore picks out a *set of states*: all the states that make it true.
+
+<Callout type="note" title="Definition: what a triple means">
+
+The triple `{P} C {Q}` holds if, whenever `C` is run in a state that satisfies `P`, **and that run terminates**, the final state satisfies `Q`.
 
 </Callout>
 
-## The Hoare triple
+The definition is a promise with conditions attached. It says nothing about runs that start in a state where `P` is false, and nothing about runs that never finish. So `{x = 1} x = x + 1 {x = 2}` holds, while `{x = 1} x = x + 1 {x = 3}` does not, because the only possible final state has `x = 2`.
 
-A **Hoare triple** is a promise about a piece of code.
+It helps to read a triple as a contract between the code and whoever calls it. The caller is responsible for establishing `P` before running `C`. In return, `C` guarantees `Q` afterwards. If the caller breaks their side of the contract, the code owes them nothing.
 
-<Mermaid code={`flowchart LR
-  P["{P}<br/>precondition<br/>BEFORE"] --> S["S<br/>the code"] --> Q["{Q}<br/>postcondition<br/>AFTER"]`} />
+### Partial correctness
 
-Example: `{x = 5}  x = x + 1  {x = 6}`
+The phrase "and that run terminates" is why these are called **partial correctness** triples. Consider
 
-- **P** is the caller's job: make it true first.
-- **Q** is the code's job: deliver it afterwards.
+```python
+# {x = 1}
+while x > 0:
+    x = x + 1
+# {x = 0}
+```
 
-<Callout type="warning" title="Trap">
-**Partial correctness**: Q is only promised *if S terminates*. An infinite loop "satisfies" any triple.
-</Callout>
+This triple holds. Starting from `x = 1`, the loop keeps increasing `x` and never stops, so there is no final state at all, and a promise about final states is trivially kept. Partial correctness separates two questions: *if* the program finishes, is the answer right? And *does* it finish? Hoare triples answer only the first. A **total correctness** triple, often written `[P] C [Q]`, additionally requires that `C` terminates from every state satisfying `P`. Termination is usually proved separately, by finding a quantity (a *variant*) that strictly decreases on every loop iteration and cannot decrease forever. In this course, and in the exam, triples mean partial correctness unless stated otherwise.
 
-## The 5 rules at a glance
+### Corner cases
 
-Read every rule as **"if the top is true, the bottom is true."**
+Three special triples are worth understanding, because they show exactly what a triple does and does not say. Write `⊤` (or `True`) for the assertion that holds in every state, and `⊥` (or `False`) for the one that holds in none.
+
+- `{⊥} C {Q}` holds for every `C` and `Q`. No starting state satisfies `⊥`, so there is nothing to check. Such a specification tells us nothing about `C`.
+- `{⊤} C {Q}` says that whenever `C` finishes, from *any* starting state, `Q` holds. This is a strong claim.
+- `{P} C {⊤}` holds for every `P` and `C`, because every final state satisfies `⊤`. It too tells us nothing.
+
+A useful rule of thumb follows: a specification gets *stronger* (more informative) as its precondition gets *weaker* and its postcondition gets *stronger*.
+
+## Auxiliary variables
+
+Suppose we want to specify a program `C` that stores the larger of `x` and `y` in `z`. A first attempt is
+
+```text
+{⊤}  C  {(x ≥ y ∧ z = x) ∨ (y ≥ x ∧ z = y)}
+```
+
+Is this a good specification? No. Take `C` to be `x = 0; y = 0; z = 0`. That program satisfies the triple, because after it runs `x ≥ y` and `z = x` both hold, yet it does not compute a maximum at all. The postcondition talks about the *final* values of `x` and `y`, and `C` is free to change them.
+
+We need a way for the postcondition to refer to the *initial* values. Hoare logic does this with **auxiliary variables** (also called *ghost* or *logical* variables). These are names that may appear in assertions but never in the program, so the program cannot change them. We conventionally write them as capital letters or with a subscript. The precondition ties them to the starting values:
+
+```text
+{x = X ∧ y = Y}  C  {(X ≥ Y ∧ z = X) ∨ (Y ≥ X ∧ z = Y)}
+```
+
+Now `z` must equal the larger of the *original* values. This still allows `C` to modify `x` and `y` along the way. If that is not acceptable, we say so explicitly by adding `x = X ∧ y = Y` to the postcondition as well. In the same style, a correct swap is specified by
+
+```text
+{x = X ∧ y = Y}  C  {x = Y ∧ y = X}
+```
+
+The Python version of this idea is the `x_orig, y_orig = x, y` line from the specifications page: a copy of the initial values kept only so that the final `assert` can mention them. Auxiliary variables also let us state more interesting specifications compactly. Integer division of `x` by `y` into quotient `q` and remainder `r` is
+
+```text
+{x = X ∧ y = Y ∧ X ≥ 0 ∧ Y > 0}  C  {X = q · Y + r ∧ 0 ≤ r < Y}
+```
+
+which says exactly what division means, without saying anything about how `C` computes it.
+
+## Inference rules and proofs
+
+Knowing what a triple means is not yet enough. To check `{P} C {Q}` directly against the definition we would have to consider every starting state, which is what testing tries and fails to do. Hoare logic instead gives a **proof system**: a set of **inference rules** from which true triples can be *derived* by pure reasoning about the program text.
+
+An inference rule is written as a fraction:
+
+```text
+premise₁    premise₂    …
+─────────────────────────   (Name)
+       conclusion
+```
+
+and is read "if every premise above the line has been proved, then the conclusion below the line may be concluded". A rule with no premises is an **axiom**: its conclusion can be used anywhere. The letters `P`, `Q`, `C`, `E` in a rule are placeholders that may be replaced by any assertion, command or expression, so one rule covers infinitely many cases. A **proof** of a triple is a tree of rule applications whose root is the triple we want and whose leaves are axioms or facts of ordinary logic.
+
+The rules are listed below, and each is explained in its own section. Python's `pass` plays the role of the `skip` command in the lectures, and `x = E` is assignment.
 
 <Rules>
-  <Rule name="Assign" conclusion="{Q[x ↦ E]} x = E {Q}" note="axiom: nothing on top" />
-  <Rule name="Seq" premises={["{P} S₁ {R}", "{R} S₂ {Q}"]} conclusion="{P} S₁; S₂ {Q}" note="R is the bridge" />
-  <Rule name="If" premises={["{P ∧ B} S₁ {Q}", "{P ∧ ¬B} S₂ {Q}"]} conclusion="{P} if B then S₁ else S₂ {Q}" note="both branches reach Q" />
-  <Rule name="While" premises={["{P ∧ B} S {P}"]} conclusion="{P} while B do S {P ∧ ¬B}" note="P = loop invariant" />
-  <Rule name="Cons" premises={["P ⇒ P₁", "{P₁} S {Q₁}", "Q₁ ⇒ Q"]} conclusion="{P} S {Q}" note="strengthen pre, weaken post" />
+  <Rule name="Skip" conclusion="{P} pass {P}" note="axiom" />
+  <Rule name="Assign" conclusion="{P[E/x]} x = E {P}" note="axiom" />
+  <Rule name="Seq" premises={["{P} C₁ {R}", "{R} C₂ {Q}"]} conclusion="{P} C₁; C₂ {Q}" note="R links the two halves" />
+  <Rule name="If" premises={["{P ∧ B} C₁ {Q}", "{P ∧ ¬B} C₂ {Q}"]} conclusion="{P} if B: C₁ else: C₂ {Q}" note="both branches reach Q" />
+  <Rule name="While" premises={["{P ∧ B} C {P}"]} conclusion="{P} while B: C {P ∧ ¬B}" note="P is the loop invariant" />
+  <Rule name="Consequence" premises={["P ⇒ P′", "{P′} C {Q′}", "Q′ ⇒ Q"]} conclusion="{P} C {Q}" note="strengthen the pre, weaken the post" />
 </Rules>
 
-<Callout type="tip" title="Memory hook">
-**"A Silly Idea Will Compile"**: **A**ssign, **S**eq, **I**f, **W**hile, **C**ons.
+The rules are **sound**: every triple they derive really holds in the sense of the definition above. That is what makes a derivation a proof rather than just a calculation.
+
+## The skip rule
+
+`{P} pass {P}`: a statement that does nothing leaves every assertion as true as it was. This is the simplest rule, and the only one that needs no explanation beyond its statement. It matters mainly as the base case for reasoning about empty branches, such as an `if` with no `else`.
+
+## The assignment rule
+
+The assignment rule is an axiom:
+
+```text
+{P[E/x]}  x = E  {P}
+```
+
+The notation `P[E/x]` means "the assertion `P` with every occurrence of the variable `x` replaced by the expression `E`". For example, if `P` is `x = 2` and the assignment is `x = x + 1`, then `P[x+1/x]` is `x + 1 = 2`, and the rule gives
+
+```text
+{x + 1 = 2}  x = x + 1  {x = 2}
+```
+
+A second example: with `P` being `x = y + 10` and the assignment `x = y + x`, we get `{y + x = y + 10} x = y + x {x = y + 10}`.
+
+Why is this the right rule? After the assignment, the variable `x` holds whatever value `E` had just before it. So anything we want to say about `x` afterwards must already have been true of `E` beforehand. Substituting `E` for `x` in the postcondition says precisely that.
+
+The rule is applied *backwards*, from the postcondition to the precondition. Given what we want to hold after the statement, it computes what must hold before. This feels unnatural at first, and it is tempting to propose a forward rule instead, such as
+
+```text
+{P}  x = E  {P[E/x]}       (wrong)
+```
+
+This plausible-looking rule is unsound. Take `P` to be `x = 0`, the assignment `x = 1`, and substitute: the rule would let us conclude `{x = 0} x = 1 {1 = 0}`, a triple whose postcondition is false in every state. The backward rule has no such problem, which is why every Hoare-logic proof of straight-line code is worked from the bottom up.
+
+<Callout type="warning" title="A common mistake">
+
+Do not reason forwards by writing something like `{x = x + 1}` after `x = x + 1`. In an assertion, `x` means the current value of `x`, so `x = x + 1` is simply false. Always start from the postcondition and substitute.
+
 </Callout>
 
-## Assignment: think backwards
+## The rule of consequence
 
-Start at the **postcondition**. Replace every `x` with `E`. That's your precondition.
+The precondition produced by the assignment rule is often not the one we were given. For `x = x + 1` with postcondition `x = 2`, the rule produces `x + 1 = 2`, but our specification might start from `x = 1`. These are logically equivalent, but they are not the same text, and the other rules match assertions exactly. The **rule of consequence** bridges this gap:
 
-<Mermaid code={`flowchart TB
-  pre["{ Q[x ↦ E] }"] --> st["x = E"] --> post["{ Q }"]
-  post -. "swap x for E ⬆" .-> pre`} />
+```text
+P ⇒ P′      {P′} C {Q′}      Q′ ⇒ Q
+───────────────────────────────────  (Consequence)
+             {P} C {Q}
+```
 
-| Want after | Code | Need before |
-|---|---|---|
-| `x = 5` | `x = y` | `y = 5` |
-| `x > 0` | `x = x + 1` | `x + 1 > 0` |
-| `x = b ∧ y = a` | `y = temp` | `x = b ∧ temp = a` |
+The middle premise is a triple we have already proved. The outer premises are ordinary logical implications, proved with arithmetic and logic rather than with Hoare rules. The rule says that we may **strengthen the precondition** (replace `P′` with any `P` that implies it) and **weaken the postcondition** (replace `Q′` with any `Q` that it implies).
 
-<Callout type="warning" title="Trap">
-Never reason forwards ("now x equals x+1"). Always **substitute into the post**.
-</Callout>
-
-## Consequence: which way is allowed?
+Both directions make sense once we think in terms of sets of states. A stronger precondition describes fewer starting states. If `C` behaves well from every state in the larger set `P′`, it certainly behaves well from the smaller set `P`. A weaker postcondition describes more final states. If `C` always lands in `Q′`, it certainly lands in the larger set `Q`.
 
 <Mermaid code={`flowchart LR
-  A["{P}<br/>stronger"] ==>|"P ⇒ P₁ ✓"| B["{P₁}"] --> S["S"] --> C["{Q₁}"] ==>|"Q₁ ⇒ Q ✓"| D["{Q}<br/>weaker"]`} />
+  A["{P}<br/>fewer start states"] ==>|"P ⇒ P′"| B["{P′}"] --> S["C"] --> C["{Q′}"] ==>|"Q′ ⇒ Q"| D["{Q}<br/>more end states"]`} />
 
-- ✓ **Strengthen the pre** (ask for *more*).
-- ✓ **Weaken the post** (promise *less*).
-- ✗ The other two directions are unsound.
+The opposite moves are unsound, and it is worth seeing why with a counterexample. From the true triple `{x = 1} y = x {y = 1}`, *weakening* the precondition to `⊤` would give `{⊤} y = x {y = 1}`, which fails when `x` starts at 2. From the true triple `{⊤} x = 5 {x > 0}`, *strengthening* the postcondition to `x > 10` would give `{⊤} x = 5 {x > 10}`, which is false. Past-paper question 3 tests exactly this distinction. See the <a href={`${import.meta.env.BASE_URL}exam-q2-q5/#q3-which-cons-moves-are-legal`}>solved paper</a>.
+
+A complete small proof using consequence and assignment looks like this. We prove `{x = 5} x = x + 1 {x > 0}`:
 
 <Proof lines={[
   { a: "{ x = 5 }" },
-  { a: "⇒ { x + 1 > 0 }", j: "Cons: 5 + 1 > 0" },
-  { c: "x = x + 1", j: "Assign" },
+  { a: "{ x + 1 > 0 }", j: "consequence: x = 5 implies x + 1 > 0" },
+  { c: "x = x + 1", j: "assignment rule, substituting x + 1 for x in x > 0" },
   { a: "{ x > 0 }" },
 ]} />
 
-<Callout type="important" title="Exam">
-This is exactly past-paper **Q3**. See the <a href={`${import.meta.env.BASE_URL}exam-q2-q5/#q3-which-cons-moves-are-legal`}>Exam Mix</a>.
-</Callout>
+## Sequential composition
 
-## Seq: the swap proof
+Programs are sequences of statements, and the **sequence rule** joins proofs of the parts into a proof of the whole:
 
-Goal: `{x = a ∧ y = b} temp = x; x = y; y = temp {x = b ∧ y = a}`
+```text
+{P} C₁ {R}      {R} C₂ {Q}
+──────────────────────────  (Seq)
+     {P} C₁; C₂ {Q}
+```
 
-Work **bottom → top**, one assignment at a time:
+If running `C₁` from `P` leads to `R`, and running `C₂` from `R` leads to `Q`, then running both in turn leads from `P` to `Q`. The intermediate assertion `R` is sometimes called a *midcondition*. It is exactly what the `assert` statements between lines did on the specifications page.
+
+In practice we find `R` by working backwards from `Q` through `C₂` with the assignment rule. Here is the full proof that the three-line swap is correct, with auxiliary variables `a` and `b` for the starting values:
+
+```python
+temp = x
+x = y
+y = temp
+```
+
+We want `{x = a ∧ y = b} … {x = b ∧ y = a}`. Starting from the end:
+
+1. Before `y = temp`, the assignment rule substitutes `temp` for `y` in the postcondition, giving `x = b ∧ temp = a`.
+2. Before `x = y`, substitute `y` for `x` in that, giving `y = b ∧ temp = a`.
+3. Before `temp = x`, substitute `x` for `temp`, giving `y = b ∧ x = a`.
+
+The last assertion is the precondition with its two halves swapped, so the rule of consequence (`∧` is commutative) connects them, and the sequence rule glues the three steps together.
 
 <Mermaid code={`flowchart TB
   A["{ x = a ∧ y = b }"] -->|"temp = x"| B["{ temp = a ∧ y = b }"]
   B -->|"x = y"| C["{ temp = a ∧ x = b }"]
-  C -->|"y = temp"| D["{ x = b ∧ y = a }"]
-  D -. "y ↦ temp" .-> C
-  C -. "x ↦ y" .-> B
-  B -. "temp ↦ x" .-> A`} />
+  C -->|"y = temp"| D["{ x = b ∧ y = a }"]`} />
 
-Then **Seq** glues the three steps together. ✓
+## The conditional rule
 
-## If: absolute value
+An `if` statement chooses between two branches, and the **conditional rule** asks us to prove each branch separately:
 
-Each branch gets its condition for free. Both must land on the **same Q**.
+```text
+{P ∧ B} C₁ {Q}      {P ∧ ¬B} C₂ {Q}
+───────────────────────────────────  (If)
+    {P} if B: C₁ else: C₂ {Q}
+```
 
-<Mermaid code={`flowchart TB
-  T["{ True }"] --> B{"x < 0 ?"}
-  B -- yes --> a1["{ x < 0 }"] --> s1["abs = -x"] --> q["{ abs ≥ 0 }"]
-  B -- no --> a2["{ x ≥ 0 }"] --> s2["abs = x"] --> q`} />
+Each branch may assume the precondition *and* the outcome of the test: the `then` branch runs only when `B` is true, and the `else` branch only when it is false. Both branches must establish the same postcondition, because after the `if` we no longer know which one ran.
 
-## While: the invariant recipe
+For example, to prove that
 
-<Mermaid code={`flowchart TB
-  P["{ P }"] --> B{"B ?"}
-  B -- true --> S["body S"] -->|"P again"| B
-  B -- false --> X["{ P ∧ ¬B } ⇒ Post"]`} />
+```python
+# {⊤}
+if x >= y:
+    z = x
+else:
+    z = y
+# {z = max(x, y)}
+```
 
-Three checks. That's it:
+it suffices to prove `{x ≥ y} z = x {z = max(x, y)}` and `{¬(x ≥ y)} z = y {z = max(x, y)}`. By the assignment rule the first needs `x ≥ y ⇒ x = max(x, y)`, and the second needs `x < y ⇒ y = max(x, y)`. Both are plain facts about the maximum, so both branches hold and the rule gives the whole statement.
 
-1. **Init:** P is true before the loop.
-2. **Keep:** `{P ∧ B} S {P}`.
-3. **Exit:** `P ∧ ¬B ⇒` the postcondition.
+## The loop rule
 
-<Callout type="tip" title="Finding P">
-Take the postcondition and **replace a constant with the loop variable**.
-`total = 1+…+n` becomes `total = 1+…+(i−1)`.
-</Callout>
+Loops are where the real difficulty lies, because a loop can run any number of times and we cannot write an assertion for each iteration separately. The **loop rule** replaces "every iteration" with a single assertion that is true at every iteration:
 
-<Fold title="Worked: summation proof">
+```text
+       {P ∧ B} C {P}
+─────────────────────────────  (While)
+{P} while B: C {P ∧ ¬B}
+```
+
+The assertion `P` is called the **loop invariant**. The premise says that if `P` holds and the loop test `B` is true, then one run of the body `C` restores `P`. The conclusion follows by a simple induction on the number of iterations: `P` holds before the first iteration, each iteration preserves it, so it holds after the last. When the loop stops, its test has just failed, so we also know `¬B`.
+
+To use the rule on a real program we usually combine it with the rule of consequence. That turns the single premise into the three obligations familiar from the loop invariants page:
+
+1. **Initialisation**: the precondition of the loop implies `P`.
+2. **Preservation**: `{P ∧ B} C {P}`.
+3. **Exit**: `P ∧ ¬B` implies the postcondition we want.
+
+The rule tells us how to *check* an invariant, not how to *find* one. Finding a good invariant is the creative step, and the <a href={`${import.meta.env.BASE_URL}loop-invariants/`}>loop invariants</a> page works through several. One example is shown in full below.
+
+### Example: integer square root
+
+The following loop computes the integer square root of `x`, the largest `s` with `s · s ≤ x`. It is very inefficient, but it is a good first example.
+
+```python
+# {x = X ∧ X ≥ 0}
+s = 0
+while (s + 1) * (s + 1) <= x:
+    s = s + 1
+# {s · s ≤ X ∧ X < (s + 1) · (s + 1)}
+```
+
+The postcondition has two parts. `s · s ≤ X` says `s` is not too big, and `X < (s+1)·(s+1)` says it is not too small. The loop's job is to keep the first part true while it searches, and its exit test supplies the second part. That suggests the invariant
+
+```text
+I  =  x = X ∧ X ≥ 0 ∧ s · s ≤ X
+```
+
+- *Initialisation*: after `s = 0`, `s · s = 0 ≤ X` because `X ≥ 0`.
+- *Preservation*: the body runs only when `(s+1)·(s+1) ≤ x`. That is exactly what we need after `s = s + 1` for the new `s` to satisfy `s · s ≤ X`. Formally, the assignment rule asks for `(s+1)·(s+1) ≤ X` before the statement, and the loop test provides it.
+- *Exit*: when the loop stops, `¬((s+1)·(s+1) ≤ x)`, that is `X < (s+1)·(s+1)`. Together with `s · s ≤ X` from the invariant, this is the postcondition.
+
+## Proof outlines
+
+Written out as a tree, even this small proof is unwieldy: the lecture slides need a full page of nested rule applications for the square-root loop. In practice we write a **proof outline** instead. A proof outline is the program annotated with an assertion between every pair of statements. Two assertions written one after the other mean that the rule of consequence was used, and that the first implies the second. The rule applications are then implicit, but every step can still be checked. Here is the outline for the square-root proof:
 
 <Proof lines={[
-  { a: "{ n ≥ 0 }" },
-  { c: "total = 0; i = 1" },
-  { i: "{ P: total = 1+…+(i−1) ∧ 1 ≤ i ≤ n+1 }", j: "init ✓" },
-  { c: "while i <= n:" },
-  { a: "{ P ∧ i ≤ n }", indent: 1 },
-  { c: "total = total + i", indent: 1 },
-  { c: "i = i + 1", indent: 1 },
-  { i: "{ P }", indent: 1, j: "keep ✓" },
-  { a: "{ P ∧ i > n } ⇒ total = 1+…+n", j: "exit ✓" },
+  { a: "{ x = X ∧ X ≥ 0 }" },
+  { a: "{ x = X ∧ X ≥ 0 ∧ 0 · 0 ≤ X }", j: "consequence" },
+  { c: "s = 0", j: "assignment" },
+  { i: "{ x = X ∧ X ≥ 0 ∧ s · s ≤ X }", j: "invariant holds initially" },
+  { c: "while (s + 1) * (s + 1) <= x:" },
+  { a: "{ I ∧ (s + 1)·(s + 1) ≤ x }", indent: 1 },
+  { a: "{ x = X ∧ X ≥ 0 ∧ (s + 1)·(s + 1) ≤ X }", indent: 1, j: "consequence" },
+  { c: "s = s + 1", indent: 1, j: "assignment" },
+  { i: "{ x = X ∧ X ≥ 0 ∧ s · s ≤ X }", indent: 1, j: "invariant preserved" },
+  { a: "{ I ∧ ¬((s + 1)·(s + 1) ≤ x) }", j: "while rule" },
+  { a: "{ s · s ≤ X ∧ X < (s + 1)·(s + 1) }", j: "consequence" },
 ]} />
 
-</Fold>
+This is the format to use in exam answers. Write the triple with auxiliary variables, annotate backwards through each assignment, add `B` and `¬B` at each `if` and loop, state the invariant, discharge the three loop obligations, and name the rule used at each step.
 
-## Exam recipe
+## From proofs to tools
 
-1. Write the triple with **ghost variables**: `{x = X ∧ y = Y}`.
-2. Annotate **backwards** through each assignment.
-3. `if`: add `∧ B` / `∧ ¬B` to each branch.
-4. `while`: state **P**, then prove init, keep and exit.
-5. Name the rule at **every** step (Assign, Seq, If, While, Cons).
+Writing proof outlines by hand is tedious and easy to get wrong, but most of the work is mechanical. Given a program in which every loop is annotated with its invariant, a **verification condition generator** can walk the program backwards, applying the assignment, sequence, conditional and loop rules automatically. What remains is a set of plain logical formulas, the **verification conditions**, which are the implications that the rule of consequence would need. If they all hold, the program meets its specification. These formulas are passed to an automated theorem prover, so that a human only has to supply the specification and the invariants. This is how tools such as Why3, Boogie and Dafny work.
 
-<Fold title="Theory corner: soundness, completeness, VCs">
+<Fold title="Soundness and completeness">
 
-- **Sound** means everything provable is true. **Complete** means everything true is provable.
-- Formal meaning: `∀s, s′. P(s) ∧ (s →ᶜ s′) ⇒ Q(s′)`. Termination is assumed, because it's undecidable in general.
-- Tools like Dafny turn annotated code into logic formulas (**verification conditions**) and let an SMT solver prove them.
+A proof system is **sound** if everything it can derive is true: here, every derivable triple holds in the sense of the definition. It is **complete** if everything true can be derived. Hoare logic is sound. It is complete only *relative* to the logic used for the side conditions: a true triple can always be derived, provided we can prove the implications that the rule of consequence needs. Since arithmetic itself is not completely provable, that caveat cannot be removed.
+
+Formally, `{P} C {Q}` holds when, for all states `s` and `s′`, if `P` is true in `s` and running `C` from `s` terminates in `s′`, then `Q` is true in `s′`. Termination appears as an assumption, not a conclusion. This is the precise meaning of "partial". Deciding termination in general is impossible (it is the halting problem), which is one reason the two questions are kept apart.
 
 </Fold>
 
-## Replay it
+## Summary
+
+Hoare logic specifies a program by relating the states before and after it runs. A triple `{P} C {Q}` promises that if `C` starts in a state satisfying `P` and terminates, it ends in a state satisfying `Q`. It is a partial correctness promise, because non-terminating runs are not covered. Auxiliary variables let postconditions refer to initial values, which is necessary for most useful specifications.
+
+To prove triples we use one rule per kind of statement. The assignment rule works backwards by substitution, the sequence rule chains proofs through a midcondition, the conditional rule proves each branch under its test, and the loop rule reduces any number of iterations to one invariant that is established, preserved and then combined with the failed loop test. The rule of consequence links these together by allowing a precondition to be strengthened and a postcondition to be weakened, never the reverse. In practice proofs are written as proof outlines. The mechanical parts can be automated, which leaves finding invariants as the central skill.
+
+## Check your understanding
 
 <Flashcards cards={[
-  { q: "What does `{P} S {Q}` promise?", a: "If P holds before S and S **terminates**, then Q holds after." },
-  { q: "Assignment rule?", a: "`{Q[x ↦ E]} x = E {Q}`: substitute E for x in the **post**." },
-  { q: "Pre for `x = x + 1` to get `{x > 0}`?", a: "`{x + 1 > 0}`" },
-  { q: "Consequence: which direction is safe?", a: "**Strengthen** the pre, **weaken** the post." },
-  { q: "While rule premise?", a: "`{P ∧ B} S {P}`: the body keeps the invariant." },
-  { q: "3 loop checks?", a: "**Init**, **Keep** (preservation), **Exit** (`P ∧ ¬B ⇒ post`)." },
-  { q: "Partial vs total correctness?", a: "Total also proves **termination** (use a decreasing variant)." },
+  { q: "What does `{P} C {Q}` promise?", a: "If C starts in a state satisfying P and **terminates**, the final state satisfies Q." },
+  { q: "Why is it called *partial* correctness?", a: "It says nothing about runs that never terminate. Total correctness also requires termination." },
+  { q: "What is an auxiliary (ghost) variable for?", a: "Naming the **initial** value of a program variable, so the postcondition can mention it. It never appears in the program." },
+  { q: "State the assignment rule.", a: "`{P[E/x]} x = E {P}`: substitute E for x in the **postcondition** to get the precondition." },
+  { q: "Why is `{P} x = E {P[E/x]}` wrong?", a: "It is unsound: with P = `x = 0` and `x = 1` it would derive `{x = 0} x = 1 {1 = 0}`." },
+  { q: "Which way may the rule of consequence move assertions?", a: "**Strengthen** the precondition, **weaken** the postcondition." },
+  { q: "What is the premise of the while rule?", a: "`{P ∧ B} C {P}`: one run of the body, started with the invariant and a true test, restores the invariant." },
+  { q: "What are the three obligations for a loop?", a: "Initialisation, preservation `{P ∧ B} C {P}`, and exit: `P ∧ ¬B` implies the postcondition." },
 ]} />
 
 <Quiz questions={[
-  { q: "Weakest pre so that `y = y + 2` gives `{y = 2x}`?", options: ["`y = 2x`", "`y + 2 = 2x`", "`y − 2 = 2x`", "`y = 2x + 2`"], answer: 1, why: "Substitute `y ↦ y + 2` in the post." },
-  { q: "If `{P}S{Q}` and `Q ⇒ R`, then…", options: ["`{P}S{R}`", "`{R}S{Q}`", "nothing"], answer: 0, why: "Weakening the postcondition is allowed (Cons)." },
-  { q: "Which rules are needed to prove the swap?", options: ["Assign", "Seq", "While", "Cons"], answer: [0, 1, 3], why: "Assign ×3, Seq to glue, Cons for the final `⇔`. No loop!" },
-  { q: "The while rule's conclusion gives you…", options: ["`{P} loop {P ∧ B}`", "`{P} loop {P ∧ ¬B}`", "`{B} loop {P}`"], answer: 1, why: "When the loop exits, B is false and P still holds." },
+  { q: "Which precondition does the assignment rule give for `y = y + 2` with postcondition `y = 2 · x`?", options: ["`y = 2 · x`", "`y + 2 = 2 · x`", "`y − 2 = 2 · x`", "`y = 2 · x + 2`"], answer: 1, why: "Substitute `y + 2` for `y` in the postcondition." },
+  { q: "If `{P} C {Q}` holds and `Q ⇒ R`, which triple follows?", options: ["`{P} C {R}`", "`{R} C {Q}`", "Neither"], answer: 0, why: "Weakening the postcondition is allowed by the rule of consequence." },
+  { q: "Which rules does the proof of the three-line swap use?", options: ["Assignment", "Sequence", "While", "Consequence"], answer: [0, 1, 3], why: "Three assignments, the sequence rule to join them, and consequence to match the final assertion with the precondition. There is no loop." },
+  { q: "What does the while rule's conclusion give you after the loop?", options: ["`P ∧ B`", "`P ∧ ¬B`", "Only `B`"], answer: 1, why: "The loop stops only when its test fails, and the invariant still holds." },
+  { q: "Does `{x = 1} while x > 0: x = x + 1 {x = 0}` hold as a partial correctness triple?", options: ["Yes", "No"], answer: 0, why: "The loop never terminates from `x = 1`, so there is no final state to check." },
 ]} />
 
-<p class="sources">Sources: 30 Oct slides, 13 Nov slides, lec 2 notebook</p>
+<p class="sources">Sources: 30 Oct and 13 Nov class slides, lecture 2 notebook, Cambridge Hoare Logic lectures 1–2 (Pulte, 2022/23)</p>

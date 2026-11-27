@@ -1,37 +1,57 @@
 ---
 title: "Specifications & Assertions"
-description: "Testing vs proof, pre/postconditions as asserts, ghost variables, weak vs strong specs."
+description: "What it means to specify a program, how pre- and postconditions are written as Python assertions, and what makes one specification stronger than another."
 part: reasoning
 order: 1
 ---
 import { Callout, Fold, Mermaid, Flashcards, Quiz } from '@/components/notes';
 
-<Callout type="tip" title="TL;DR">
+Before we can ask whether a program is correct, we have to say what it is supposed to do. That statement is the program's **specification**. This page is the first in the reasoning part of the course, and it sets up the vocabulary that the later pages rely on. We start by asking why testing alone cannot establish correctness, and what the alternative looks like. We then write specifications as `assert` statements in Python, using three running examples from the lecture notebook: swapping two variables, the maximum of three numbers, and (briefly) integer division. Along the way we meet auxiliary or "ghost" variables, which let a specification talk about the values a program started with, and the distinction between weak and strong specifications.
 
-- **Tests** check some inputs; a **proof** covers all of them.
-- A spec = **precondition** (caller's job) + **postcondition** (code's job), written as `assert`.
-- A **strong** spec rules out every wrong answer; a weak one lets bugs slip through.
+The next page, <a href={`${import.meta.env.BASE_URL}loop-invariants/`}>loop invariants</a>, extends the same ideas to loops, and the page after that, <a href={`${import.meta.env.BASE_URL}hoare-logic/`}>Hoare logic</a>, turns the assertions we write here into a formal proof system.
 
-</Callout>
+## Testing and proof
 
-## Testing vs proof
+The usual way to gain confidence in a program is to run it on some inputs and compare the output with what we expected. This is valuable, and nobody should skip it, but it has a fundamental limit, summed up in a remark attributed to Edsger Dijkstra:
 
-> Testing shows the **presence** of bugs, never their **absence**. (after Dijkstra)
+> Testing shows the presence of bugs, never their absence.
+
+A test that fails proves there is a bug. A test that passes proves only that the program works on that one input. A function on two 64-bit integers has 2¹²⁸ possible inputs, and no test suite comes close to covering them. Whatever inputs we did not try, the program may still get wrong.
+
+A **proof** works differently. Instead of checking cases one by one, it argues from the program text that the output is right for *every* input satisfying some stated assumption. The difference is the same as in geometry. We could convince ourselves of Pythagoras' theorem by drawing many right-angled triangles and measuring their sides, but measurements are approximate and cover only the triangles we drew. Alternatively, we drop the altitude `CH` from the right angle and prove once that the three triangles △ACH, △CBH and △ABC are similar; the theorem then follows for every right-angled triangle at once.
 
 | | Testing | Proof |
 |---|---|---|
-| Semantics | intuitive | **exact** (formal) |
-| Assurance | partial: only inputs you tried | **mathematical**: all inputs |
-| Analogy | measure a few triangles | prove △ACH ∼ △CBH ∼ △ABC once |
+| Meaning of "correct" | intuitive: "it gave the answer I expected" | exact, defined formally |
+| Assurance | partial: only the inputs tried | mathematical: all inputs satisfying the precondition |
+| Geometry analogy | measure a few triangles | prove △ACH ∼ △CBH ∼ △ABC once |
+
+In a typical development cycle, testing is the only place where correctness is checked, and it comes after the code is already written:
 
 <Mermaid code={`flowchart LR
   R[Requirements] --> D[Design] --> I[Implement] --> T{{TESTS}} --> P[Deploy] --> R`} />
 
-<Callout type="tip" title="Remember">
-The fix is a **formal foundation**: formal semantics + tools to reason about programs, i.e. Hoare-style `{P} C {Q}`.
-</Callout>
+To do better we need a **formal foundation**: a precise meaning (a *formal semantics*) for programs and for specifications, together with rules and tools for reasoning about them. Hoare logic, with its triples `{P} C {Q}`, is the foundation this course uses. On this page we prepare for it by writing specifications that Python can at least *check* at run time.
 
-## Where Python sits
+### Verification and validation
+
+A proof that a program meets its specification is only as good as the specification. The Cambridge lectures put it this way: we often fail to write programs that meet our expectations, and there are two separate ways in which this happens.
+
+- We fail to write programs that meet their specification. Addressing this is called **verification**: checking the program against the specification.
+- We fail to write specifications that meet our expectations. Addressing this is called **validation**: checking the specification against what we actually wanted.
+
+<Mermaid code={`flowchart LR
+  P["program"] -->|"verification"| S["specification"] -->|"validation"| G["desired goal"]`} />
+
+The two feed into each other. A failed proof often reveals a bug in the program, but it can equally reveal that the specification asked for the wrong thing. Much of this page is really about validation: we will see specifications that look reasonable and are satisfied by obviously wrong programs.
+
+### The landscape of techniques
+
+Testing and proof are two ends of a spectrum. The lectures compare verification and validation techniques along three axes: **coverage** (do they consider a few inputs, a bounded set, or all of them), **expressivity** (how rich are the properties they can state), and **automation** (how much of the work the computer does). Testing is fully automatic and very expressive, since a test can check anything we can compute, but its coverage is sparse. Static typing covers every execution and is automatic, but it can only express simple properties such as "this is an integer". Model checking explores all executions up to some bound. Program logics such as Hoare logic cover every execution and can express rich properties, but need the most human effort.
+
+More expressive and complete techniques give more confidence, but they are not free. Verification can be expensive and time-consuming, a verified design can still fail if the specification was wrong, and a proof can give a false sense of security. The lectures' conclusion is that heavyweight techniques should be used *together with* testing, not as a replacement for it.
+
+Programming languages themselves sit at different points of this landscape, depending on how much verification they support and how much effort it costs to use:
 
 <Mermaid code={`quadrantChart
   title Verification-aware languages
@@ -49,20 +69,32 @@ The fix is a **formal foundation**: formal semantics + tools to reason about pro
   Fstar: [0.62, 0.76]
   Lean: [0.85, 0.9]`} />
 
-- Python only has **run-time checks** (`assert`).
-- So we write with `assert` the same specs a Hoare tool would **prove**.
-- Top right: **Curry–Howard**, types as specs, programs as proofs.
+Python sits in the bottom-left corner. It is easy to start with, but its only built-in support for checking specifications is the run-time `assert` statement. Languages with strong static type systems, such as Haskell and Rust, rule out whole classes of errors before the program runs. Dafny and F* attach Hoare-style pre- and postconditions to functions and discharge them automatically with an SMT solver (an automated theorem prover for logic with arithmetic). In the top right, proof assistants such as Lean rest on the **Curry–Howard correspondence**: a type can express a specification, and a program of that type is a proof that the specification holds.
 
-## A spec is a contract
+In this course we write in Python, so we express with `assert` exactly the specifications that a Hoare-logic tool would prove. The assertions are checked only on the inputs we run, but writing them forces us to state precisely what the code should do, and the same assertions become the pre- and postconditions of a proof later.
+
+## Specifications as contracts
+
+A specification of a function has two parts.
+
+<Callout type="note" title="Definition: precondition and postcondition">
+
+The **precondition** is a condition on the inputs (and any other state) that must hold *before* the function runs. Establishing it is the **caller's** obligation.
+
+The **postcondition** is a condition that must hold *after* the function finishes, typically relating the result to the inputs. Establishing it is the **implementer's** obligation: the code must guarantee it whenever the precondition held.
+
+</Callout>
+
+It helps to think of the pair as a contract. The caller promises the precondition; in return, the function promises the postcondition. If the caller breaks the contract, for example by passing an empty list to a function that requires a non-empty one, the function owes nothing and may do anything.
 
 <Mermaid code={`flowchart LR
   C["Caller"] -->|"makes PRE true"| F["function"] -->|"guarantees POST"| R["Result"]`} />
 
-- **Precondition:** must hold *before*. The **caller's** obligation.
-- **Postcondition:** holds *after*. The **implementer's** obligation.
-- In Python: both are **`assert`** statements.
+In Python both parts are written as `assert` statements: the precondition at the top of the function body, the postcondition just before `return`. An assertion `assert cond, msg` evaluates `cond`; if it is true nothing happens, and if it is false Python raises `AssertionError` with the message `msg`. Assertions between statements, describing the state in the middle of the computation, are called **intermediate assertions** or *midconditions*. They will become the assertions of a proof outline in Hoare logic.
 
-## Swap: naive asserts break
+## Swapping two variables
+
+Our first example exchanges the values of two variables using a temporary:
 
 ```python
 def swap_temp(x, y):
@@ -72,76 +104,130 @@ def swap_temp(x, y):
     return x, y
 ```
 
-Assert after each line, naively:
+`swap_temp(2, 3)` returns `(3, 2)`, and since nothing here depends on the type, `swap_temp('one', 'two')` returns `('two', 'one')`. To understand why it works, we try to annotate each line with what is true after it.
+
+### A first attempt that fails
+
+The obvious approach is to assert, after each statement, the equation that statement just created, and to keep the equations from earlier lines:
 
 ```python
-temp = x;  assert temp == x                  # ok
-x = y;     assert temp == x and x == y       # FAILS: x overwritten
+temp = x;  assert temp == x                  # passes
+x = y;     assert temp == x and x == y       # fails: x has been overwritten
 ```
 
-<Callout type="warning" title="Trap">
-After `x = y`, `temp == x` is **stale**. Assertions only see the **current** state.
+The second assertion fails on `swap_temp(2, 3)`. After `x = y`, the variable `x` holds 3 and `temp` still holds 2, so `temp == x` is no longer true. The equation `temp == x` was true *at the moment it was written*, but an assertion is always evaluated in the *current* state. When `x` changed, the fact about it became stale.
+
+We could drop the stale parts and only assert what each line has just done (`assert x == y` after the second line, `assert y == temp` after the third). Those assertions pass, but they say almost nothing. None of them states that the two values have been exchanged, which is the whole point of the function. To say that, we must compare the final values with the *original* ones, and by the end of the function the original values have been overwritten.
+
+### Ghost variables
+
+The solution is to record the original values in extra variables at the start, purely so that later assertions can refer to them:
+
+```python
+def swap_temp_verified(x, y):
+    x_orig, y_orig = x, y                     # ghost variables
+    temp = x
+    assert temp == x_orig
+    x = y
+    assert temp == x_orig and x == y_orig
+    y = temp
+    assert y == temp and temp == x_orig and x == y_orig
+    assert x == y_orig and y == x_orig, "Swap failed!"   # postcondition
+    return x, y
+```
+
+<Callout type="note" title="Definition: ghost (auxiliary) variable">
+
+A **ghost variable** (also called an **auxiliary** or **logical** variable) is a variable used only in specifications and reasoning. It records a value, usually an initial value, so that later assertions can mention it. It never influences the result of the program.
+
 </Callout>
 
-## Ghost variables to the rescue
-
-To say "x and y were exchanged" you need the **original** values. Snapshot them in **ghost variables**: used only for reasoning, never for the result.
-
-```python
-x_orig, y_orig = x, y                         # ghosts
-temp = x;  assert temp == x_orig
-x = y;     assert temp == x_orig and x == y_orig
-y = temp;  assert y == temp and temp == x_orig and x == y_orig
-assert x == y_orig and y == x_orig, "Swap failed!"   # POST
-```
+`x_orig` and `y_orig` are ghost variables: deleting them and every assertion that uses them leaves the computed result unchanged. Each intermediate assertion now describes the state precisely in terms of the starting values, and the final one states the specification: the new `x` is the old `y`, and the new `y` is the old `x`. If the original values were `a` and `b`, the states pass through the following stages.
 
 <Mermaid code={`flowchart TB
   A["x = a, y = b"] -->|"temp = x"| B["temp = a, y = b"]
   B -->|"x = y"| C["temp = a, x = b"]
   C -->|"y = temp"| D["x = b, y = a ✓"]`} />
 
-<Callout type="tip" title="Memory hook">
-**Ghosts remember the past** so your asserts can talk about it.
-</Callout>
+In Hoare-logic notation, writing `X` and `Y` for the ghost variables, the specification is the triple `{x = X ∧ y = Y} swap {x = Y ∧ y = X}`, read "if `x` starts as `X` and `y` as `Y`, then afterwards `x` is `Y` and `y` is `X`". The three intermediate assertions are exactly the midconditions of the proof of this triple on the <a href={`${import.meta.env.BASE_URL}hoare-logic/`}>Hoare logic</a> page.
 
-## Specs catch bugs
+### Why ghost variables are necessary: the lectures' example
 
-- Delete `x = y` and the post `x == y_orig` **fails instantly**.
-- The middle asserts are exactly the **midconditions** of a Hoare proof of `{x = a ∧ y = b} swap {x = b ∧ y = a}`.
+The Cambridge lectures make the same point with a sharper example. Suppose we want a program `C` that stores the maximum of `x` and `y` in `z`, and we write the specification
+
+```text
+{⊤}  C  {(x ≥ y ∧ z = x) ∨ (y ≥ x ∧ z = y)}
+```
+
+Here `⊤` (true) is the precondition that every state satisfies, `∧` is "and" and `∨` is "or". Is this a good specification? No. Take `C` to be
+
+```python
+x = 0
+y = 0
+z = 0
+```
+
+Afterwards `x ≥ y` and `z = x` both hold, so the postcondition is satisfied, yet `C` has not computed any maximum. The postcondition talks about the *final* values of `x` and `y`, and `C` was free to change them. Ghost variables repair this by fixing the initial values in the precondition:
+
+```text
+{x = X ∧ y = Y}  C  {(X ≥ Y ∧ z = X) ∨ (Y ≥ X ∧ z = Y)}
+```
+
+Now `z` must be the larger of the *original* values. Even this specification still allows `C` to modify `x` and `y` on the way, as long as `z` ends up right. If that is not acceptable, we say so by adding `x = X ∧ y = Y` to the postcondition as well. This is a typical validation question: a specification says exactly what it says, and anything it leaves out, the program is free to do.
+
+### Specifications catch bugs
+
+A good specification detects wrong implementations. If we delete the line `x = y` from `swap_temp_verified`, the call `swap_temp_verified('x', 2)` returns with `x` still `'x'` and the postcondition `x == y_orig` fails immediately with `AssertionError: Swap failed!`.
+
+Specifications also help analyse more suspicious code. Two well-known "swaps without a temporary" are
+
+```python
+def swap_risky_sum(x, y):
+    x_orig, y_orig = x, y
+    x = x + y
+    y = x - y            # intended: y is now the original x
+    x = x - y            # intended: x is now the original y
+    assert x == y_orig and y == x_orig, "Risky swap failed!"
+    return x, y
+
+def swap_risky_mult(x, y):
+    x_orig, y_orig = x, y
+    x = x * y
+    y = x / y
+    x = x / y
+    assert x == y_orig and y == x_orig, "Risky swap failed!"
+    return x, y
+```
+
+Algebraically both are fine: after the first line `x = a + b`, then `y = (a + b) − b = a`, then `x = (a + b) − a = b`. But that algebra is about mathematical numbers, and the ghost-variable postcondition checks what Python actually computes.
 
 | Risky swap | Breaks when |
 |---|---|
-| `x = x + y; y = x - y; x = x - y` | **floats** lose precision; **str** fails |
-| `x = x * y; y = x / y; x = x / y` | **y == 0** (ZeroDivisionError), float rounding |
+| `x = x + y; y = x - y; x = x - y` | **floats** lose precision: `(0.1, 0.2)` gives `(0.2, 0.10000000000000003)`; **str**: `+` concatenates but `-` raises `TypeError` |
+| `x = x * y; y = x / y; x = x / y` | **y == 0**: `0 / 0` raises `ZeroDivisionError`; float rounding, including large ints, since `/` always returns a float |
 
-<Callout type="tip" title="Remember">
-A **correct spec** helps you **detect buggy code**: the ghost-variable post shows exactly which inputs break a swap.
-</Callout>
+For Python integers the sum version is in fact correct, because Python integers have unlimited size and never overflow (in C, `x + y` could overflow). The product version, on the other hand, returns floats even for integer inputs: `swap_risky_mult(2, 3)` returns `(3.0, 2.0)`, which passes the assertion only because `3.0 == 3` in Python, and for `10**20 + 1` the conversion to float loses the final digit and the assertion fails. A correct specification with ghost variables shows exactly which inputs break a swap.
 
-## max_of_three: weak vs strong
+## Weak and strong specifications
+
+A specification can be correct, in the sense that the right program satisfies it, and still be too weak to be useful. The example from the notebook is the maximum of three numbers:
 
 ```python
 def max_of_three(a, b, c):
     if a >= b:
-        result = a if a >= c else c
+        if a >= c:
+            result = a
+        else:
+            result = c
     else:
-        result = b if b >= c else c
+        if b >= c:
+            result = b
+        else:
+            result = c
     return result
 ```
 
-| Spec | Assertion | Accepts bug `result = 100`? |
-|---|---|---|
-| **Weak** | `result >= a and result >= b and result >= c` | **Yes**: for (20, 30, 10) anything ≥ 30 passes |
-| **Strong** | weak **and** `result == a or result == b or result == c` | **No**: only 30 passes |
-
-<Mermaid code={`flowchart LR
-  W["weak: 30, 31, ..., 100 all OK"] -->|"add: result is one of a, b, c"| S["strong: only 30"]`} />
-
-<Callout type="important" title="Exam">
-**Upper bound + attained** together *define* max. Same pair returns as **∀ and ∃** in the `find_max` loop invariant.
-</Callout>
-
-<Fold title="Decision tree of max_of_three">
+The nested `if` statements form a decision tree with four leaves:
 
 <Mermaid code={`flowchart TD
   q1{"a ≥ b?"} -- T --> q2{"a ≥ c?"}
@@ -151,11 +237,68 @@ def max_of_three(a, b, c):
   q3 -- T --> rb["result = b"]
   q3 -- F --> rc2["result = c"]`} />
 
-The strong spec fails with `AssertionError: Result not among inputs!` on the buggy version.
+What does "the maximum" mean? A natural first answer is "the result is at least as large as every input", which we can add before `return`:
 
-</Fold>
+```python
+assert result >= a and result >= b and result >= c, "Result is not maximum!"
+```
 
-## The spec–implementation continuum
+This assertion passes on every correct run. Now introduce a bug: in the branch where `b` is largest, write `result = 100` instead of `result = b`. Calls such as `max_of_three(2, 3, 10)` or `max_of_three(20, 30, 100)` never reach the buggy branch, because `c` is largest, so the bug goes unnoticed. Calling `max_of_three(20, 30, 10)` does reach it, and returns 100 instead of 30. Yet the assertion passes, because 100 is indeed at least 20, 30 and 10. The specification accepts the wrong answer.
+
+The problem is that "at least as large as every input" describes an **upper bound**, and 30, 31, 32, …, 100 are all upper bounds of `{20, 30, 10}`. The maximum is the *least* upper bound, and the simplest way to pin it down is to require that the result is also one of the inputs:
+
+```python
+assert result >= a and result >= b and result >= c, "Result is not maximum!"
+assert result == a or result == b or result == c, "Result not among inputs!"
+```
+
+With the second assertion the buggy version fails with `AssertionError: Result not among inputs!` on `(20, 30, 10)`.
+
+| Spec | Assertion | Accepts bug `result = 100`? |
+|---|---|---|
+| Weak | `result >= a and result >= b and result >= c` | Yes: for (20, 30, 10) anything ≥ 30 passes |
+| Strong | weak **and** `result == a or result == b or result == c` | No: only 30 passes |
+
+<Mermaid code={`flowchart LR
+  W["weak: 30, 31, ..., 100 all OK"] -->|"add: result is one of a, b, c"| S["strong: only 30"]`} />
+
+<Callout type="note" title="Definition: stronger specification">
+
+One postcondition is **stronger** than another if it implies it, so that it allows fewer results. A specification is strong enough when it allows *only* the correct results; then every program that satisfies it is correct.
+
+</Callout>
+
+The two conditions together, **upper bound** and **attained**, are the definition of the maximum: the result is greater than or equal to every input, and equal to at least one of them. Neither alone is enough. The upper bound alone admits 100, as we saw. "Equal to one of the inputs" alone admits returning `a` every time. The same pair returns on the next page as the two quantified halves, `∀` and `∃`, of the loop invariant for `find_max`.
+
+<Callout type="important" title="Exam">
+
+When asked for the specification of a maximum, give both halves: upper bound and attained. The same pattern (a bound plus a witness) is needed for minimum, search and "find the best" problems in general.
+
+</Callout>
+
+## More specifications from the lectures
+
+Ghost variables make it possible to specify interesting computations compactly. The lectures give two further examples, written here with lowercase program variables and uppercase ghost variables (the lectures use the opposite convention).
+
+**Euclidean division.** A program `C` that divides `x` by `y`, storing the quotient in `q` and the remainder in `r`, is specified by
+
+```text
+{x = X ∧ y = Y ∧ X ≥ 0 ∧ Y > 0}  C  {X = q · Y + r ∧ 0 ≤ r < Y}
+```
+
+The precondition demands a non-negative dividend and a positive divisor. The postcondition says that `q` and `r` reconstruct `X` and that the remainder is smaller than the divisor. Notice that the condition `0 ≤ r < Y` is what makes the answer unique: without it, `q = 0, r = X` would always satisfy `X = q · Y + r`. This is the same weak-versus-strong issue as in `max_of_three`. In Python the postcondition is `assert x_orig == q * y_orig + r and 0 <= r < y_orig`, and Python's `divmod(X, Y)` returns exactly this pair.
+
+**Primality.** A program that sets `r` to 1 if `p` is prime and 0 otherwise, for `p > 0`, can be specified as
+
+```text
+{p = N ∧ N > 0}  C  {(r = 0 ∧ ∃a, b. a > 1 ∧ b > 1 ∧ N = a · b) ∨ (r = 1 ∧ ¬∃a, b. a > 1 ∧ b > 1 ∧ N = a · b)}
+```
+
+where `∃a, b` means "there exist numbers `a` and `b` such that" and `¬` means "not". In words: `r` is 0 exactly when `N` factors as a product of two numbers greater than 1. The specification describes what primality *is* and says nothing about how to test it, whether by trial division, a sieve or anything else.
+
+## The specification–implementation continuum
+
+These examples point to a general difficulty in writing specifications. Any description of a computation sits somewhere on a continuum between two extremes:
 
 | Pure specification (WHAT) | Pure implementation (HOW) |
 |---|---|
@@ -163,31 +306,47 @@ The strong spec fails with `AssertionError: Result not among inputs!` on the bug
 | declarative | imperative |
 | external observations | internal computation |
 
-- **Sweet spot:** near the spec end, describe **external properties**.
-- `max_of_three`: "≥ every input **and** one of them". No *how*.
+At the specification end we describe properties of the result that can be checked from outside: "the result is an upper bound and is one of the inputs", "`X = q · Y + r` with `0 ≤ r < Y`". At the implementation end we describe the steps that produce the result. The useful place for a specification is near the specification end. A good specification of `max_of_three` says that the result is at least every input and equal to one of them, and nothing about which comparisons to make in which order.
 
-<Callout type="warning" title="Trap">
-If your post just **re-runs the algorithm**, it shares the algorithm's bugs.
+There is a practical reason for this. Suppose the postcondition for `max_of_three` simply re-ran the algorithm, recomputing the maximum with the same nested `if` statements and comparing. Then a bug in the algorithm would be copied into the check, and the wrong program would pass its own specification. A specification is valuable precisely because it is an independent description of the answer.
+
+<Callout type="warning" title="A common mistake">
+
+Writing a postcondition that repeats the implementation's steps. Such a check shares the implementation's bugs. Describe what the answer *is* (its external properties), not how it was computed.
+
 </Callout>
 
-## Replay it
+The far specification end has its own limit: the description must still be checkable. "`r` is 1 if `N` is prime" is a perfect specification for a proof, but as a Python `assert` it needs some way of computing primality, which brings us back towards an implementation. Choosing a point on the continuum is a judgement about what is clear, independent and still checkable.
+
+## Summary
+
+A specification states what a program should do: a precondition the caller must establish and a postcondition the code must then guarantee. Testing checks a specification on some inputs and can reveal bugs but never prove their absence. Proof checks it on all inputs. Verification asks whether the program meets its specification; validation asks whether the specification captures what we wanted, and both kinds of failure are common. Heavier techniques are used alongside testing, not instead of it.
+
+In Python we write specifications as `assert` statements. Assertions are evaluated in the current state, so a postcondition that relates outputs to inputs needs ghost variables that record the original values. Without them, as the lectures' `x = 0; y = 0; z = 0` example shows, a specification can be satisfied by a program that does nothing useful. A specification must also be strong enough: "result ≥ every input" lets `result = 100` through, while adding "result is one of the inputs" defines the maximum exactly. Finally, good specifications describe external properties of the answer rather than the steps of the algorithm, so that they remain an independent check.
+
+## Check your understanding
 
 <Flashcards cards={[
   { q: "What can testing never show?", a: "The **absence** of bugs." },
+  { q: "Verification vs validation?", a: "Verification: does the program meet its spec? Validation: does the spec meet what we actually want?" },
   { q: "Precondition is whose job?", a: "The **caller's**." },
   { q: "Postcondition is whose job?", a: "The **implementer's** (the code)." },
   { q: "What is a ghost variable?", a: "A snapshot like `x_orig` used **only for reasoning**, never affecting the result." },
   { q: "Why does `assert temp == x` fail after `x = y`?", a: "x was **overwritten**; asserts see only the current state." },
+  { q: "Which program satisfies `{⊤} C {(x ≥ y ∧ z = x) ∨ (y ≥ x ∧ z = y)}` without computing a max?", a: "`x = 0; y = 0; z = 0`. The postcondition only mentions final values." },
   { q: "Weak spec for max_of_three?", a: "`result` ≥ a, b and c (upper bound only)." },
   { q: "What makes it strong?", a: "Also `result` **equals one of** a, b, c (attained)." },
+  { q: "Spec of Euclidean division?", a: "`{x = X ∧ y = Y ∧ X ≥ 0 ∧ Y > 0} C {X = q · Y + r ∧ 0 ≤ r < Y}`" },
   { q: "Where is the spec sweet spot?", a: "Near the **WHAT** end: external properties, not algorithm steps." },
 ]} />
 
 <Quiz questions={[
   { q: "Which spec rejects `return 100` for `max_of_three(20, 30, 10)`?", options: ["`result >= a and result >= b and result >= c`", "upper bound **and** `result in (a, b, c)`", "`result > 0`"], answer: 1, why: "Only the strong spec requires the result to be one of the inputs." },
-  { q: "The arithmetic swap `x = x + y; y = x - y; x = x - y` fails for…", options: ["small ints", "strings", "floats with rounding"], answer: [1, 2], why: "Strings can't be subtracted; floats lose precision." },
+  { q: "The arithmetic swap `x = x + y; y = x - y; x = x - y` fails for…", options: ["small ints", "strings", "floats with rounding"], answer: [1, 2], why: "Strings can't be subtracted; floats lose precision. Python ints never overflow, so they are fine." },
   { q: "Python's place in verification support is…", options: ["proof assistant", "Hoare logic + SMT", "run-time checks", "strong static types"], answer: 2, why: "Python only offers `assert` at run time." },
   { q: "A postcondition that copies the algorithm is bad because…", options: ["it's slow", "it shares the algorithm's bugs", "Python forbids it"], answer: 1, why: "It describes HOW, not WHAT, so a wrong algorithm passes its own check." },
+  { q: "Finding that your specification allowed an obviously wrong program is a failure of…", options: ["verification", "validation"], answer: 1, why: "The program met the spec; the spec did not capture what was wanted." },
+  { q: "In the division spec, which part makes `q` and `r` unique?", options: ["`X ≥ 0`", "`X = q · Y + r`", "`0 ≤ r < Y`"], answer: 2, why: "Without the bound on `r`, `q = 0, r = X` would always satisfy the equation." },
 ]} />
 
-<p class="sources">Sources: lec 2 Jupyter Notebook.ipynb, 13 Nov slides</p>
+<p class="sources">Sources: lec 2 Jupyter Notebook.ipynb, 13 Nov slides, Cambridge Hoare Logic lectures 1–2 (Pulte, 2022/23)</p>

@@ -1,25 +1,51 @@
 ---
 title: "Lists"
-description: "Ordered, mutable sequences. Slicing, sort vs sorted, and the alias/shallow/deep copy trap."
+description: "How Python lists store references to objects, how their operations change or copy them, and why aliasing, shallow copies and iterators behave as they do."
 part: python
 order: 2
 ---
 import { Callout, Fold, Mermaid, Flashcards, Quiz } from '@/components/notes';
 
-<Callout type="tip" title="TL;DR">
+On the <a href={`${import.meta.env.BASE_URL}python-basics/`}>previous page</a> we saw that a Python variable is a name bound to an object, and that the difference between mutable and immutable objects decides whether a change made through one name can be seen through another. With integers and strings that difference never shows, because they are immutable. The **list** is the first mutable type we study in depth, and it is where the name-and-object model stops being an abstract point and starts to determine what programs actually print.
 
-- Lists are **ordered, mutable, heterogeneous**; each slot holds a **reference**.
-- `xs.sort()` mutates and returns `None`; `sorted(xs)` returns a **new** list.
-- `b = a` is an **alias**; `.copy()` is **shallow**; `copy.deepcopy` copies everything.
-
-</Callout>
+This page first describes what a list is in memory: a sequence of slots, each holding a reference to an object. It then covers indexing and slicing, the operations that add, remove, search and sort elements, and for each one whether it changes the list *in place* or builds a *new* list, which is the question that matters most in practice. With that in hand we can explain the classic surprises: repetition with `*` that shares inner lists, `xs = xs.sort()` leaving `None`, and the three levels of "copying" (aliasing, shallow copy and deep copy). We finish with iterators, which explain why `reversed(xs)` can be used only once, and with how to test list operations with assertions, following the approach of the <a href={`${import.meta.env.BASE_URL}specifications/`}>specifications</a> page.
 
 ## What a list is
 
-- **Ordered**: elements keep their positions.
-- **Mutable**: change it in place.
-- **Heterogeneous**: `[1, "two", 3.0, [4]]` is fine.
-- Each slot holds a **reference** to an object. Root of every aliasing surprise!
+A **list** is an ordered, mutable, heterogeneous sequence of objects, written with square brackets: `[1, 2, 3, 4, 5]`. Each of the three adjectives has a precise meaning.
+
+- **Ordered**: every element has a position, numbered from 0, and the elements stay in the positions where they were put until an operation moves them.
+- **Mutable**: the list object itself can be changed (elements added, removed or replaced) while keeping the same identity.
+- **Heterogeneous**: the elements need not have the same type. `[1, "two", 3.0, [4]]` is a valid list containing an `int`, a `str`, a `float` and another list.
+
+How can one list hold objects of different types and sizes? The answer is the key to everything on this page. A list does not contain its elements directly. It is an object holding a row of **slots**, and each slot holds a **reference** to some other object, exactly as a name does. A slot behaves like an anonymous name: it is bound to an object, and it can be rebound to a different one.
+
+<Mermaid code={`flowchart LR
+  xs(["xs"]) --> L["list object: slot 0, slot 1, slot 2"]
+  L -->|"slot 0"| A["int 1"]
+  L -->|"slot 1"| B["str 'two'"]
+  L -->|"slot 2"| C["list [4]"]`} />
+
+We can confirm this with identities. Reading an element gives us the object in the slot, not a copy:
+
+```python
+my_list = [1, 2, 3, 4, 5]
+my_0 = my_list[0]
+print(my_0 is my_list[0])
+my_0 = 10
+print(my_list[0])
+```
+
+```text
+True
+1
+```
+
+After the second line, the name `my_0` and slot 0 refer to the same integer object, so `is` gives `True`. Rebinding `my_0` to `10` moves only the name. Slot 0 still refers to `1`, so the list is unchanged. The rule from the previous page, that rebinding one name never changes another, applies to slots too.
+
+## Indexing and slicing
+
+Each element can be reached by a **positive index**, counting from 0 at the front, or a **negative index**, counting from −1 at the back. For a list of length `n`, index `-k` means the same as `n - k`.
 
 ```text
  xs =   [ 'a', 'b', 'c', 'd', 'e' ]
@@ -27,163 +53,420 @@ import { Callout, Fold, Mermaid, Flashcards, Quiz } from '@/components/notes';
  -idx:    -5   -4   -3   -2   -1
 ```
 
-## Slicing
+So `xs[0]` is `'a'` and `xs[-1]` is `'e'`, the last element, whatever the length of the list. An index outside the range `-n` to `n - 1` raises `IndexError`.
+
+A **slice** `xs[start:stop:step]` selects a sub-sequence and returns it as a **new list**. It starts at index `start`, moves `step` positions at a time, and stops *before* reaching `stop`. Each of the three parts may be omitted: `start` defaults to the beginning, `stop` to the end, and `step` to 1.
 
 ```python
-xs[0]      # 'a'          xs[-1]   # 'e'
-xs[1:3]    # ['b', 'c']   stop is EXCLUDED
-xs[:2]     # ['a', 'b']
-xs[::2]    # ['a', 'c', 'e']
-xs[::-1]   # reversed copy
+xs = ['a', 'b', 'c', 'd', 'e']
+print(xs[1:3])    # ['b', 'c']       indices 1 and 2; 3 is excluded
+print(xs[:2])     # ['a', 'b']       from the start
+print(xs[::2])    # ['a', 'c', 'e']  every second element
+print(xs[::-1])   # ['e', 'd', 'c', 'b', 'a']  a reversed copy
+print(xs[-5:-3])  # ['a', 'b']       negative indices work too
 ```
 
-<Callout type="tip" title="Memory hook">
-`xs[start:stop:step]`: **start is in, stop is out**, like a door you walk up to but not through.
-</Callout>
+The rule that the start is included and the stop excluded is called a **half-open interval**, written `[start, stop)` in mathematics. It may look arbitrary, but it has two useful properties. The length of `xs[i:j]` is simply `j - i`. And for any `k`, `xs[:k] + xs[k:] == xs`: splitting at `k` gives two pieces that fit together with no element lost and none repeated. With a closed interval both formulas would need a `+ 1` or `- 1`, which is a classic source of off-by-one errors.
 
-## Core operations
+Unlike indexing, slicing is forgiving at the boundaries: `xs[2:100]` simply returns `['c', 'd', 'e']`, and `xs[10:]` returns the empty list, with no error. A slice describes a range, and a range that runs off the end just contains fewer elements.
 
-| Goal | Code | Note |
-|---|---|---|
-| add at end | `xs.append(x)` | **in place** |
-| add at index | `xs.insert(i, x)` | index past end just appends |
-| add many | `xs.extend(ys)` | in place |
-| concatenate | `xs + ys` | **new** list |
-| remove by value | `xs.remove(x)` | **first** match; `ValueError` if absent |
-| remove by index | `xs.pop(i)` / `xs.pop()` | returns the element |
-| find | `xs.index(x)` | `ValueError` if absent |
-| count / test | `xs.count(x)`, `x in xs` | linear scan |
+## Adding, combining and removing elements
 
-<Fold title="Handy built-ins">
+For every list operation we should ask one question: does it **mutate** the list it is called on (change it in place, keeping its identity), or does it **build a new list** and leave the original alone? Methods called with a dot, such as `xs.append(x)`, generally mutate and return `None`. Operators and built-in functions, such as `xs + ys` and `sorted(xs)`, generally return a new object. The table summarises the common operations, and the examples below trace them.
+
+| Goal | Code | Mutates? | Notes |
+|---|---|---|---|
+| add at the end | `xs.append(x)` | yes | adds one element |
+| add at an index | `xs.insert(i, x)` | yes | an index past the end just appends |
+| add several | `xs.extend(ys)` | yes | adds each element of `ys` |
+| concatenate | `xs + ys` | no | builds a new list |
+| repeat | `xs * k` | no | new list, `k` copies of the references |
+| remove by value | `xs.remove(x)` | yes | first match only; `ValueError` if absent |
+| remove by index | `xs.pop(i)`, `xs.pop()` | yes | returns the removed element; default is the last |
+| remove everything | `xs.clear()` | yes | the list becomes `[]` |
+| find | `xs.index(x)`, `xs.index(x, start)` | no | first position; `ValueError` if absent |
+| count, test | `xs.count(x)`, `x in xs` | no | linear scan |
+
+### Adding
 
 ```python
-max(xs), min(xs), sum(xs), len(xs), xs.clear()
-for i, x in enumerate(xs, start=1): ...
-any(x > 65 for x in scores)   # at least one True
-all(x > 65 for x in scores)   # all True; all([]) is True
+my_list = [1, 2, 3, 4, 5]
+my_list.append(6)
+print(my_list)             # [1, 2, 3, 4, 5, 6]
+my_list.insert(2, 99)
+print(my_list)             # [1, 2, 99, 3, 4, 5, 6]
+my_list.insert(21, 99)
+print(my_list)             # [1, 2, 99, 3, 4, 5, 6, 99]
+my_list.extend([7, 8, 9])
+print(my_list)             # [1, 2, 99, 3, 4, 5, 6, 99, 7, 8, 9]
 ```
 
-</Fold>
+`insert(i, x)` places `x` so that it ends up at index `i`, shifting later elements one place right. An index beyond the end, such as 21 here, does not raise an error; the element is simply appended. This is consistent with slicing's tolerance at the boundaries, but it means that a wrong index can go unnoticed.
 
-## The `[[0]] * 3` trap
+The difference between `append` and `extend` is a frequent mistake. `append` adds its argument as *one* element, whatever it is; `extend` iterates over its argument and adds each element:
 
-`*` repeats **references**, not objects.
+```python
+a = [1, 2]
+a.append([3, 4])
+print(a)          # [1, 2, [3, 4]]   one new element, itself a list
+b = [1, 2]
+b.extend([3, 4])
+print(b)          # [1, 2, 3, 4]     two new elements
+```
+
+### Concatenation and repetition
+
+The operator `+` builds a new list containing the references from both operands, and `*` builds a new list repeating the references:
+
+```python
+list1 = [1, 2, 3]
+list2 = [4, 5, 6]
+combined = list1 + list2
+print(combined)     # [1, 2, 3, 4, 5, 6]
+print(list1)        # [1, 2, 3]   unchanged
+print(list1 * 3)    # [1, 2, 3, 1, 2, 3, 1, 2, 3]
+```
+
+There is one subtlety. The augmented assignment `xs += ys` looks like shorthand for `xs = xs + ys`, but for lists it is not: `+=` extends the existing list in place. The difference is invisible until a second name refers to the same list.
+
+```python
+a = [1]
+b = a              # b is an alias for the same list
+a = a + [2]        # builds a new list and rebinds a; b still sees the old one
+print(a, b)        # [1, 2] [1]
+
+a = [1]
+b = a
+a += [2]           # mutates the shared list in place
+print(a, b)        # [1, 2] [1, 2]
+```
+
+### Removing
+
+```python
+my_list = [1, 2, 99, 3, 99, 4, 5]
+my_list.remove(99)
+print(my_list)              # [1, 2, 3, 99, 4, 5]   only the first 99
+popped = my_list.pop(2)
+print(popped, my_list)      # 3 [1, 2, 99, 4, 5]
+last = my_list.pop()
+print(last, my_list)        # 5 [1, 2, 99, 4]
+my_list.clear()
+print(my_list)              # []
+```
+
+`remove` deletes by *value* and only the first occurrence; asking it to remove a value that is not present raises `ValueError`. `pop` deletes by *position* and, unlike the other mutating methods, returns something useful: the element it removed.
+
+## Searching and counting
+
+```python
+numbers = [1, 2, 3, 2, 4, 2, 5]
+print(numbers.count(2), numbers.count(7))   # 3 0
+print(numbers.index(2))                     # 1   first occurrence
+print(numbers.index(2, 2))                  # 3   first occurrence at or after index 2
+print(3 in numbers, 8 in numbers)           # True False
+```
+
+`count` returns 0 for a missing value, but `index` raises `ValueError`, because there is no position it could truthfully return. A safe pattern is to test with `in` first. All three operations work by a **linear scan**: they compare the value against the elements one by one, so on a list of length `n` they may take `n` comparisons. That cost is the main motivation for the hash-based <a href={`${import.meta.env.BASE_URL}dictionaries/`}>dictionaries</a> later in the course.
+
+## Repetition and shared references
+
+The repetition operator copies *references*, not the objects they refer to. With immutable elements that makes no visible difference, but with mutable elements it does. Suppose we want a 3-by-1 grid of zeros and write:
 
 ```python
 grid = [[0]] * 3
 grid[0][0] = 7
-print(grid)                      # [[7], [7], [7]] !!
-grid = [[0] for _ in range(3)]   # ✓ three separate lists
+print(grid)
 ```
+
+```text
+[[7], [7], [7]]
+```
+
+We changed one cell and all three rows changed. The reason is that `[[0]]` is a list with one slot, referring to a single inner list `[0]`. Multiplying by 3 creates an outer list with three slots, all holding a reference to *that same inner list*. Then `grid[0][0] = 7` follows slot 0 to the inner list and rebinds its first slot. There is only one inner list, so every row shows the change.
 
 <Mermaid code={`flowchart LR
   g(["grid"]) --> s0["slot 0"] & s1["slot 1"] & s2["slot 2"]
-  s0 --> in["[7]"]
-  s1 --> in
-  s2 --> in`} />
+  s0 --> inner["the one inner list [7]"]
+  s1 --> inner
+  s2 --> inner`} />
 
-<Callout type="important" title="Exam">
-`[0] * 3` is safe: ints are immutable. The trap only bites with **mutable** inner objects.
+The fix is to evaluate the expression `[0]` three times, creating three separate lists. A list comprehension does exactly that, because its expression is re-evaluated on each iteration:
+
+```python
+grid = [[0] for _ in range(3)]
+grid[0][0] = 7
+print(grid)      # [[7], [0], [0]]
+```
+
+<Callout type="important" title="Exam point">
+
+`[0] * 3` is safe: it gives three references to the integer `0`, and since integers are immutable, the only way to "change" a cell is `row[i] = …`, which rebinds that one slot. The problem arises only when the repeated element is **mutable** and is changed in place.
+
 </Callout>
 
-## sort() vs sorted()
+## Sorting and reversing
 
-<Mermaid code={`flowchart LR
-  A["xs.sort()"] -->|"mutates xs, returns None"| A1["xs is now sorted"]
-  B["sorted(xs)"] -->|"xs untouched, returns NEW list"| B1["works on any iterable"]`} />
+Python offers two ways to sort, and they differ in exactly the mutate-or-build question.
 
-- Both take **`key=`** and **`reverse=True`**.
-- `xs.reverse()` is also **in place**.
-- Sorting is **stable**, O(n log n): Timsort (Powersort merge policy since 3.11).
+```python
+numbers = [3, 1, 4, 1, 5, 9, 2]
+numbers.sort()
+print(numbers)                     # [1, 1, 2, 3, 4, 5, 9]
+numbers.sort(reverse=True)
+print(numbers)                     # [9, 5, 4, 3, 2, 1, 1]
+numbers.reverse()
+print(numbers)                     # [1, 1, 2, 3, 4, 5, 9]
 
-<Callout type="warning" title="Trap">
-`xs = xs.sort()` sets `xs` to **`None`**.
+unsorted = [3, 1, 4, 1, 5, 9, 2]
+print(sorted(unsorted))            # [1, 1, 2, 3, 4, 5, 9]
+print(unsorted)                    # [3, 1, 4, 1, 5, 9, 2]   unchanged
+print(sorted(unsorted, reverse=True))
+```
+
+The method `xs.sort()` sorts the list **in place** and returns `None`. The built-in function `sorted(xs)` leaves its argument untouched and returns a **new** sorted list. Because `sorted` only needs to read the elements one by one, it accepts any iterable, not just a list: `sorted("cab")` is `['a', 'b', 'c']`. `xs.reverse()`, like `sort`, reverses in place and returns `None`, whereas `xs[::-1]` and `reversed(xs)` leave `xs` alone.
+
+<Callout type="warning" title="A common mistake">
+
+`xs = xs.sort()` sorts the list and then rebinds `xs` to the method's return value, which is `None`. The sorted list is now unreachable. Write either `xs.sort()` or `xs = sorted(xs)`.
+
 </Callout>
 
-## Alias vs shallow vs deep
+Returning `None` from mutating methods is a deliberate design choice: it makes this mistake fail quickly (the next use of `xs` raises an error) and signals to the reader that the call is for its side effect.
+
+Both forms take two optional keyword arguments. `reverse=True` sorts in descending order. `key=f` sorts by the value of `f(element)` rather than by the element itself, so `sorted(words, key=len)` sorts strings by length. Python's sort is **stable**: elements with equal keys keep their original relative order. So `sorted(["bb", "a", "ccc", "dd"], key=len)` is `['a', 'bb', 'dd', 'ccc']`, with `"bb"` still before `"dd"`. Stability lets us sort by several criteria in turn: sort by the secondary key first, then by the primary key.
+
+The algorithm behind both `list.sort()` and `sorted()` is **Timsort**, a hybrid of merge sort and insertion sort that looks for already-sorted runs in the data and merges them. It takes O(n log n) comparisons in the worst case and close to O(n) on nearly sorted data. Since Python 3.11 the rule that decides which runs to merge is **Powersort**; earlier versions used Tim Peters' original merge policy. The two functions use the identical algorithm.
+
+## Aliases, shallow copies and deep copies
+
+We now come to the most important consequence of the slot-and-reference model. There are three different things that one might mean by "make `b` a copy of `a`", and they differ in how much is shared.
 
 ```python
 import copy
 a = [1, 2, [3, 4]]
-b = a                  # alias: same object
-c = a.copy()           # shallow (also a[:], list(a))
-d = copy.deepcopy(a)   # deep
+b = a                  # alias: the same list object
+c = a.copy()           # shallow copy (also a[:] or list(a))
+d = copy.deepcopy(a)   # deep copy
 ```
+
+- An **alias** is a second name for the same object. `b = a` copies nothing at all.
+- A **shallow copy** creates a new outer list whose slots refer to the *same* element objects as the original. The outer list is new; everything inside it is shared.
+- A **deep copy** creates a new outer list and, recursively, new copies of every mutable object inside it, so nothing mutable is shared.
 
 <Mermaid code={`flowchart LR
-  a(["a"]) --> L1["outer #1"]
+  a(["a"]) --> L1["outer list #1"]
   b(["b"]) --> L1
-  c(["c"]) --> L2["outer #2"]
-  d(["d"]) --> L3["outer #3"]
-  L1 --> N["inner [3, 4]"]
+  c(["c"]) --> L2["outer list #2"]
+  d(["d"]) --> L3["outer list #3"]
+  L1 --> N["inner list [3, 4]"]
   L2 --> N
-  L3 --> N2["inner copy [3, 4]"]`} />
+  L3 --> N2["separate inner list [3, 4]"]`} />
 
-| Then do… | `b` alias | `c` shallow | `d` deep |
+The diagram predicts the effect of every change. A change to a *slot* of the outer list `a` (such as `a[0] = 99`) affects only the outer list it is made in, so only the alias `b` sees it. A change *inside* the inner list (such as `a[2].append(5)`) affects the inner object, which `a`, `b` and `c` all reach. Only `d`, which has its own inner list, is unaffected.
+
+| After… | `b` (alias) | `c` (shallow) | `d` (deep) |
 |---|---|---|---|
-| `a[0] = 99` | sees it | — | — |
-| `a[2].append(5)` | sees it | **sees it** | — |
+| `a[0] = 99` | sees it | unaffected | unaffected |
+| `a[2].append(5)` | sees it | sees it | unaffected |
 
-<Callout type="tip" title="Remember">
-**Shallow** copies the top level only. Nested mutables stay **shared**.
-</Callout>
+### The four ways to "copy"
 
-## is vs ==, and 4 'copies'
-
-- **`is`**: the very same object (identity).
-- **`==`**: equal contents.
-
-| Code | `c is original` |
-|---|---|
-| `c = original.copy()` | False |
-| `c = original[:]` | False |
-| `c = list(original)` | False |
-| `c = original` | **True**: no copy, just an alias |
-
-After `c = a.copy()`: `a == c` is **True**, `a is c` is **False**.
-
-## Iterators & testing
-
-`reversed(xs)` gives an **iterator**: lazy, saves memory, **single use**.
+Three expressions make a shallow copy of a list, and one makes no copy:
 
 ```python
-r = reversed([1, 2, 3])
-list(r)   # [3, 2, 1]
-list(r)   # []  exhausted!
+original = [1, 2, 3, [4, 5]]
+copy1 = original.copy()    # method: explicit, lists only
+copy2 = original[:]        # full slice: works on any sequence
+copy3 = list(original)     # constructor: accepts any iterable
+copy4 = original           # assignment: an alias, not a copy
+print(original is copy1, original is copy2, original is copy3, original is copy4)
 ```
 
-Good list tests check three things:
+```text
+False False False True
+```
 
-1. **Core behaviour**: the normal result.
-2. **Edge cases**: empty, one element, duplicates, negatives.
-3. **Side effects**: did the original change?
+`.copy()` is the most explicit. The full slice `[:]` works for every sequence type, including strings and tuples, and is marginally faster. `list(...)` is the most general, since it builds a list from any iterable: a tuple, set, string or generator. All three produce the same shallow copy. `copy4` is not a copy at all.
+
+The operator `is` tests **identity** (same object), while `==` tests **equality** (equal values). After `c = a.copy()`, `a == c` is `True` but `a is c` is `False`.
+
+### A shallow copy step by step
+
+The lecture traces a shallow copy carefully, and it is worth doing the same:
+
+```python
+original = [1, 2, 3, [4, 5]]
+shallow_copy = original.copy()
+
+shallow_copy[0] = 99
+print(original, shallow_copy)
+# [1, 2, 3, [4, 5]] [99, 2, 3, [4, 5]]
+
+shallow_copy[3][0] = 88
+print(original, shallow_copy)
+# [1, 2, 3, [88, 5]] [99, 2, 3, [88, 5]]
+
+print(original is shallow_copy)          # False
+print(original[3] is shallow_copy[3])    # True
+```
+
+Initially the two outer lists are different objects, but slot 3 of each refers to the same inner list `[4, 5]`. The assignment `shallow_copy[0] = 99` rebinds slot 0 *of the copy's own outer list*, so the original is unaffected (and since integers are immutable, there was no shared object to change anyway). The assignment `shallow_copy[3][0] = 88` first follows slot 3 to the shared inner list, then rebinds slot 0 of *that* list. Both outer lists reach the inner list through their slot 3, so both show `88`.
+
+`copy.deepcopy` removes the sharing:
+
+```python
+import copy
+original = [1, 2, 3, [4, 5]]
+deep_copy = copy.deepcopy(original)
+deep_copy[3][0] = 88
+print(original)     # [1, 2, 3, [4, 5]]   unchanged
+print(deep_copy)    # [1, 2, 3, [88, 5]]
+```
+
+A deep copy is the safe choice when a list contains mutable objects that will be changed independently. It is also slower and uses more memory, since it duplicates the entire structure, so a shallow copy is preferred when the elements are immutable (for a list of numbers or strings the two behave identically).
+
+## Built-in functions and iterators
+
+Several built-in functions take a list (or any iterable) and compute a single result:
+
+```python
+my_list = [3, 1, 4, 1, 5, 9, 2]
+print(max(my_list), min(my_list), sum(my_list), len(my_list))   # 9 1 25 7
+```
+
+### Iterators
+
+`reversed(xs)` looks as if it should return a reversed list, but it does not:
+
+```python
+my_list = [1, 2, 3, 4, 5]
+reversed_iterator = reversed(my_list)
+print(reversed_iterator)
+print(list(reversed_iterator))
+print(list(reversed_iterator))
+```
+
+```text
+<list_reverseiterator object at 0x...>
+[5, 4, 3, 2, 1]
+[]
+```
+
+To understand this output we need the notion of an iterator.
+
+<Callout type="note" title="Definition: iterable and iterator">
+
+An **iterable** is any object that can produce its elements one at a time; lists, tuples, strings, sets, dictionaries and ranges are iterables. An **iterator** is an object that remembers a position in such a sequence. Calling `next(it)` returns the next element and advances the position; when no elements remain, `next` raises `StopIteration`. `iter(xs)` asks an iterable for a fresh iterator.
+
+</Callout>
+
+An iterator is **lazy**: it does not compute its elements in advance but produces each one when asked. `reversed(my_list)` therefore creates no new list. It creates a small object that holds a reference to `my_list` and a position, starting at the last index and moving backwards. This saves memory, which matters for very large sequences: `my_list[::-1]` immediately builds a complete reversed copy, while `reversed(my_list)` costs the same small amount of memory whatever the list's length.
+
+The price is that an iterator is **single-use**. Its position only moves forward. The first `list(reversed_iterator)` calls `next` repeatedly until `StopIteration`, collecting `[5, 4, 3, 2, 1]`, and leaves the iterator at the end. The second call finds nothing left and returns `[]`. We say the iterator is **exhausted**. To traverse again we must create a new iterator with another call to `reversed(my_list)`.
+
+A `for` loop is built on the same protocol. `for x in xs:` calls `iter(xs)` once and then calls `next` on the result before each iteration, stopping when `StopIteration` is raised. This explains a well-known mistake, modifying a list while looping over it:
+
+```python
+xs = [1, 2, 2, 3]
+for x in xs:
+    if x == 2:
+        xs.remove(x)
+print(xs)
+```
+
+```text
+[1, 2, 3]
+```
+
+The list iterator keeps an index. At index 1 it yields the first `2`, which is removed, so every later element shifts one place left. The iterator then moves to index 2, which now holds `3`: the second `2` was skipped and never examined. The safe approach is to build a new list, as in `[x for x in xs if x != 2]`, or to loop over a copy.
+
+`enumerate(xs)` is another iterator. It yields pairs `(index, element)`, which is the idiomatic way to loop when the position is needed as well as the value. An optional `start` changes the first number:
+
+```python
+for i, x in enumerate(['a', 'b', 'c'], start=1):
+    print(i, x)
+```
+
+```text
+1 a
+2 b
+3 c
+```
+
+### any and all
+
+`any(xs)` returns `True` if at least one element is true, and `all(xs)` returns `True` if every element is true. Numbers count as true unless they are zero:
+
+```python
+print(any([0, 0, 0, 2, 0]), any([0, 0, 0, 0, 0]))   # True False
+print(all([1, 1, 1, 1, 2]), all([1, 1, 0, 1, 1]))   # True False
+
+scores = [85, 92, 78, 90, 65]
+print(any(score > 95 for score in scores))   # False
+print(all(score > 60 for score in scores))   # True
+```
+
+The argument `score > 95 for score in scores` is a **generator expression**, another lazy iterator, which produces one boolean per score. Both functions short-circuit: `any` stops at the first true element and `all` at the first false one. These two functions are the Python versions of the quantifiers of logic: `all(P(x) for x in xs)` says "for all `x` in `xs`, `P(x)`", written `∀x. P(x)`, and `any` corresponds to "there exists", `∃x. P(x)`. They are therefore the natural way to write assertions about whole lists, such as `assert all(x >= 0 for x in xs)`.
+
+The empty cases follow logic too. `all([])` is `True`, because there is no element that fails; a universal claim over nothing is **vacuously true**. `any([])` is `False`, because there is no element that succeeds.
+
+One notebook example is worth a closer look. With curly braces instead of parentheses, `{score > 65 for score in scores}` is a *set* comprehension. A set keeps only distinct values, so it collapses five booleans into `{False, True}`, and then `any({False, True})` is `True` and `all({False, True})` is `False`. Here the answers happen to agree with the list version, but the set has discarded how many scores passed.
+
+## Testing list operations with assertions
+
+The <a href={`${import.meta.env.BASE_URL}specifications/`}>specifications</a> page argued that an assertion should check one clear behaviour, and that tests should cover failure cases as well as successes. For list operations, a good set of assertions checks three things:
+
+1. **Core behaviour**: in a normal case, is the result what the specification says?
+2. **Edge cases**: the empty list, a single element, duplicates, negative numbers, a value that is not present.
+3. **Side effects**: did the operation change the original list, and was it supposed to?
+
+The third point is the one most often forgotten, and it follows directly from this page: since methods mutate and functions usually do not, a test should check the state of the original list as well as the returned value.
 
 ```python
 xs = [1, 2, 1]
 xs.remove(1)
-assert xs == [2, 1]   # only the FIRST 1 removed
+assert xs == [2, 1]           # only the first 1 is removed
+
+ys = [3, 1, 2]
+result = sorted(ys)
+assert result == [1, 2, 3]    # core behaviour
+assert ys == [3, 1, 2]        # side effect: the original is untouched
+assert sorted([]) == []       # edge case: empty input
+assert ys.sort() is None      # sort() mutates and returns None
+assert ys == [1, 2, 3]
 ```
 
-## Replay it
+## Summary
+
+A list is an ordered, mutable, heterogeneous sequence whose slots hold references to objects. Indexing reads a slot, and slicing builds a new list from a half-open range `[start, stop)` with an optional step, tolerating out-of-range bounds. The essential question for every operation is whether it mutates the list in place (`append`, `insert`, `extend`, `remove`, `pop`, `clear`, `sort`, `reverse`, and `+=`) or builds a new object (`+`, `*`, slicing, `sorted`, `list(...)`). Mutating methods return `None`, which is why `xs = xs.sort()` loses the list.
+
+Because slots hold references, sharing is everywhere. `[[0]] * 3` repeats one reference to a single inner list. Assignment creates an alias, `.copy()`, `[:]` and `list(...)` create a shallow copy whose new outer list still shares its elements, and `copy.deepcopy` duplicates the whole structure. The operators `is` and `==` distinguish identity from equality.
+
+Finally, many built-ins return lazy iterators, which produce elements on demand and are exhausted after one pass; `for` loops are built on the same `iter`/`next` protocol, which is why changing a list while iterating over it skips elements. `any` and `all` are the quantifiers "there exists" and "for all", the natural vocabulary for assertions about lists.
+
+## Check your understanding
 
 <Flashcards cards={[
-  { q: "What's in a list slot?", a: "A **reference** to an object." },
-  { q: "`xs[1:3]` on `['a','b','c','d']`?", a: "`['b', 'c']`: stop is excluded." },
-  { q: "`xs.insert(100, x)` on a short list?", a: "Just **appends**. No error." },
-  { q: "`xs.remove(x)` removes…", a: "The **first** occurrence; `ValueError` if absent." },
-  { q: "`xs.sort()` returns?", a: "`None`. It mutates in place." },
-  { q: "Safe 3×1 grid?", a: "`[[0] for _ in range(3)]`" },
-  { q: "Shallow copy shares…", a: "**Nested** mutable objects." },
-  { q: "`is` vs `==`?", a: "`is` = same object; `==` = equal contents." },
-  { q: "Second `list(r)` on a `reversed` iterator?", a: "`[]`: iterators are **exhausted** after one use." },
+  { q: "What does a list slot hold?", a: "A **reference** to an object, not the object itself." },
+  { q: "What is `xs[1:3]` on `['a','b','c','d']`?", a: "`['b', 'c']`: the start is included and the stop excluded." },
+  { q: "What does `xs.insert(100, x)` do on a short list?", a: "It **appends** `x`. No error is raised." },
+  { q: "What does `xs.remove(x)` remove?", a: "The **first** occurrence of `x`; it raises `ValueError` if `x` is absent." },
+  { q: "What does `xs.sort()` return?", a: "`None`. It sorts the list in place." },
+  { q: "How do you build a safe 3-by-1 grid of zeros?", a: "`[[0] for _ in range(3)]`, which evaluates `[0]` three times." },
+  { q: "What does a shallow copy share with the original?", a: "All the element objects, including **nested** mutable lists. Only the outer list is new." },
+  { q: "What is the difference between `is` and `==`?", a: "`is` tests for the same object (identity); `==` tests for equal values." },
+  { q: "What does a second `list(r)` give on a `reversed` iterator `r`?", a: "`[]`: an iterator is **exhausted** after one pass." },
+  { q: "How does `xs += ys` differ from `xs = xs + ys` for lists?", a: "`+=` extends the existing list in place, so aliases see the change; `xs + ys` builds a new list and rebinds `xs`." },
 ]} />
 
 <Quiz questions={[
-  { q: "`g = [[0]] * 3; g[0][0] = 7; print(g)`", options: ["`[[7], [0], [0]]`", "`[[7], [7], [7]]`", "`[7, 0, 0]`", "`TypeError`"], answer: 1, why: "All three slots reference the **same** inner list." },
-  { q: "`a = [1, [2]]; c = a.copy(); a[1].append(3)`. What is `c`?", options: ["`[1, [2]]`", "`[1, [2, 3]]`", "`[1, [2], 3]`"], answer: 1, why: "Shallow copy: the inner list is shared." },
-  { q: "After `xs = [3, 1, 2]; xs = xs.sort()`, `xs` is…", options: ["`[1, 2, 3]`", "`[3, 1, 2]`", "`None`"], answer: 2, why: "`sort()` returns `None`, and you bound `xs` to it." },
-  { q: "Which make a NEW list object?", options: ["`a.copy()`", "`a[:]`", "`list(a)`", "`b = a`"], answer: [0, 1, 2], why: "`b = a` is only an alias." },
-  { q: "`all([])` is…", options: ["`True`", "`False`", "`ValueError`"], answer: 0, why: "Vacuously true: no element fails." },
+  { q: "What does `g = [[0]] * 3; g[0][0] = 7; print(g)` print?", options: ["`[[7], [0], [0]]`", "`[[7], [7], [7]]`", "`[7, 0, 0]`", "`TypeError`"], answer: 1, why: "All three slots reference the **same** inner list." },
+  { q: "`a = [1, [2]]; c = a.copy(); a[1].append(3)`. What is `c`?", options: ["`[1, [2]]`", "`[1, [2, 3]]`", "`[1, [2], 3]`"], answer: 1, why: "A shallow copy shares the inner list." },
+  { q: "After `xs = [3, 1, 2]; xs = xs.sort()`, what is `xs`?", options: ["`[1, 2, 3]`", "`[3, 1, 2]`", "`None`"], answer: 2, why: "`sort()` returns `None`, and the assignment binds `xs` to it." },
+  { q: "Which expressions make a new list object?", options: ["`a.copy()`", "`a[:]`", "`list(a)`", "`b = a`"], answer: [0, 1, 2], why: "`b = a` only creates an alias for the same object." },
+  { q: "What is `all([])`?", options: ["`True`", "`False`", "`ValueError`"], answer: 0, why: "It is vacuously true: no element fails." },
+  { q: "`a = [1]; b = a; a += [2]`. What is `b`?", options: ["`[1]`", "`[1, 2]`", "`[2]`"], answer: 1, why: "For lists `+=` mutates in place, and `b` refers to the same list." },
 ]} />
 
 <p class="sources">Sources: lec 3 Jupyter Notebook.ipynb</p>

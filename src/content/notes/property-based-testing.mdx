@@ -1,138 +1,202 @@
 ---
 title: "Property-Based Testing"
-description: "Hypothesis generates hundreds of inputs, checks a property, and shrinks failures to a minimum."
+description: "How property-based testing checks a specification on many generated inputs, how Hypothesis generates and shrinks them, and how to build valid test data."
 part: reasoning
 order: 5
 ---
 import { Callout, Fold, Mermaid, Flashcards, Quiz } from '@/components/notes';
 
-<Callout type="tip" title="TL;DR">
+On the <a href={`${import.meta.env.BASE_URL}specifications/`}>specifications</a> page we wrote down what a function should do as preconditions and postconditions, and on the <a href={`${import.meta.env.BASE_URL}hoare-logic/`}>Hoare logic</a> page we saw how to *prove* that a program meets such a specification for every input. Proof gives the strongest guarantee, but it is expensive: every loop needs an invariant and every step needs a justification. Ordinary unit tests are cheap, but they check only the handful of inputs that we thought of. **Property-based testing** sits between the two. We write the specification down as an executable check, a *property*, and let a library generate hundreds of inputs to check it on. When a check fails, the library reduces the failing input to the simplest one it can find.
 
-- A property test checks `∀x ∈ G. P(x) ⇒ Q(f(x))` on **many generated inputs**.
-- On failure, Hypothesis **shrinks** to the simplest failing input.
-- Build **valid inputs by construction** (`@st.composite`, `.map`), not by rejecting (`assume`).
+This page explains why hand-picked examples are not enough, what a property is and how it relates to a Hoare triple, how the Python library Hypothesis generates and shrinks inputs, and how to write good properties, using run-length encoding as the running example. We then look at the hardest practical problem, generating inputs that satisfy a demanding precondition, and at fuzzing, the industrial cousin of property-based testing. The page ends with Lab 08, in which a property-based test suite for an AVL tree is graded by how many deliberately buggy trees it can catch.
 
-</Callout>
+## Why examples are not enough
 
-## The PBT formula
+A unit test checks one input against one expected output, for instance `assert square(3) == 9`. Each such test is a single point in the space of possible inputs, and the person who picks the points is usually the person who wrote the code. The inputs they find natural to test are the inputs they had in mind while writing it, which are exactly the inputs the code is most likely to handle correctly. The cases that break programs are the ones nobody thought of: the empty string, a negative count, a key that appears twice, a value of `0` that is mistaken for "missing".
+
+The Cambridge lectures place testing on a spectrum of verification techniques ordered by how much of the input space they cover. Testing has *sparse* coverage: it looks at some inputs and says nothing about the rest. Model checking has *bounded* coverage: it explores every state up to some size. Program logics such as Hoare logic have *complete* coverage: a proof covers every input. More complete techniques give more confidence, but they cost more, and the lectures are careful to add three warnings. Verification can be very expensive and time-consuming. A verified design may still not work, because the specification itself may be wrong. And verification can give a false sense of security. Their conclusion is that heavier techniques should be used *together with* testing, not as a replacement for it.
 
 <Mermaid code={`flowchart LR
-  UT["Unit tests<br/>point probing"] --- PBT["Property-based testing<br/>executable specs"] --- FV["Formal proof<br/>absolute, high effort"]`} />
+  UT["Unit tests<br/>a few chosen points"] --- PBT["Property-based testing<br/>many generated points"] --- FV["Formal proof<br/>every input, high effort"]`} />
 
-`∀x ∈ G.  P(x) ⇒ Q(f(x))`: **G** = generator, **P** = precondition (assume), **Q** = postcondition (check).
+Property-based testing keeps the cheapness of testing but changes two things. The test states a general fact about the function rather than one input-output pair, and the inputs are chosen by a program rather than by the author. Coverage is still sparse, since a property test still samples, but the samples are many, varied and deliberately include awkward cases.
+
+## Properties as sampled Hoare triples
+
+A **property** is a statement that should hold for every input in some set. In the course notation, a property test checks
+
+```text
+∀x ∈ G.  P(x) ⇒ Q(f(x))
+```
+
+Here `∀x ∈ G` reads "for every `x` produced by the generator `G`", `P` is a precondition on the input, `⇒` is "implies", and `Q` is a postcondition relating the input to the result `f(x)`. In words: for every generated input that satisfies the precondition, the output of `f` satisfies the postcondition. The generator `G` is called a **strategy** in Hypothesis. It describes a set of values, such as all integers or all strings, together with a way of drawing samples from it.
+
+This is the Hoare triple `{P} f {Q}` read as a test instead of a theorem. A triple claims that from every state satisfying `P`, the function ends in a state satisfying `Q`. A proof establishes that for all states at once. A property test draws many states, discards those that do not satisfy `P`, runs `f` on the rest, and checks `Q`. Every property-based testing tool runs essentially this harness many times:
 
 ```python
-def check_f(x):          # the harness every PBT tool runs, many times
-    if not P(x):         # precondition fails → discard this input
+def check_f(x):          # run once for each generated x
+    if not P(x):         # precondition fails: discard this input
         return
     res = f(x)
     assert Q(x, res), "Bug"
 ```
 
-<Callout type="tip" title="Remember">
-It's the Hoare triple `{P} f {Q}`, **sampled** instead of proved.
-</Callout>
-
-## Unit test vs property test
+The comparison with a unit test is worth making explicit.
 
 | | Unit test | Property test |
 |---|---|---|
-| Inputs | a few, by hand | hundreds, **generated** |
-| Checks | `f(3) == 9` | a **property**, e.g. `decode(encode(s)) == s` |
-| Logic | one example | `∀x. property(x)` (sampled) |
-| On failure | your input | a **shrunk, minimal** counterexample |
+| Inputs | a few, chosen by hand | hundreds, generated |
+| What is checked | one output, e.g. `f(3) == 9` | a property, e.g. `decode(encode(s)) == s` |
+| Logical reading | one instance | `∀x. property(x)`, sampled |
+| On failure | the input you wrote | a shrunk, minimal counterexample |
 
-<Mermaid code={`flowchart LR
-  G["Strategy"] -->|"generate x"| T["assert property x"]
-  T -->|"pass"| G
-  T -->|"fail"| Sh["Shrink"] --> R["minimal x"]`} />
+A property test can never prove the `∀`. If it passes, we know only that no counterexample was found among the samples. If it fails, though, we have a concrete input that breaks the specification, which is as definite as any proof.
 
 ## Anatomy of a Hypothesis test
+
+Hypothesis is the standard property-based testing library for Python. A test is an ordinary function whose arguments are supplied by decorators:
 
 ```python
 from hypothesis import given, settings, Verbosity, strategies as st
 
-@settings(max_examples=1000, verbosity=Verbosity.verbose)  # ONE @settings
-@given(st.integers())                                       # strategy → arg
+@settings(max_examples=1000, verbosity=Verbosity.verbose)
+@given(st.integers())
 def test_addition_identity(x: int):
     assert x + 0 == x
     assert x + 1 > x
-test_addition_identity()        # call directly (or run with pytest)
+
+test_addition_identity()        # call it directly, or run the file with pytest
 ```
 
-- **`@settings`:** `max_examples` (default **100**), `verbosity`, `deadline`, `suppress_health_check`. Combine into **one** decorator.
-- **`@given`:** tries **boundary values first** (0, 1, −1, powers of 2, extremes), then random.
-- Reads as `∀x ∈ ℤ. (x + 0 = x) ∧ (x + 1 > x)`. First failing assert **stops** that example.
+The decorator `@given(st.integers())` says that the argument `x` is to be drawn from the strategy `st.integers()`, which generates Python integers of any size. The body is the property: it reads as `∀x ∈ ℤ. (x + 0 = x) ∧ (x + 1 > x)`, where `ℤ` is the set of integers and `∧` is "and". Calling the decorated function runs the body once for each generated example. The assertions are checked top to bottom, so the first failing `assert` stops that example and Hypothesis treats the input as a counterexample.
+
+Hypothesis does not draw values uniformly at random. It deliberately tries values that commonly expose bugs, such as `0`, `1`, `-1`, values near powers of two and very large or very small numbers, mixed in with random ones. Uniform sampling from all integers would almost never produce `0`, yet `0` is where a great many bugs live.
+
+The decorator `@settings` configures the run. Its most important options are `max_examples`, the number of examples to try (the default is **100**), `verbosity`, which with `Verbosity.verbose` prints every input tried, `deadline`, a time limit per example, and `suppress_health_check`, which silences specific warnings, as we will need below. All the options go into a single `@settings(...)` decorator. They are not stacked as several decorators.
 
 ## Shrinking
 
+When a property fails, the first counterexample Hypothesis finds is usually random and large, and therefore hard to understand. Hypothesis then **shrinks** it: it repeatedly tries simpler variants of the failing input, keeping any that still fail, until no simpler failing input can be found. For integers "simpler" means closer to zero, for strings and lists it means shorter and with smaller elements.
+
+Consider the deliberately false property
+
 ```python
+@settings(verbosity=Verbosity.verbose)
 @given(st.integers())
 def test_flawed(x):
-    assert x**2 - 100 < x     # true only for −9 ≤ x ≤ 10
+    assert x**2 - 100 < x
 ```
+
+The inequality `x² − 100 < x` is the same as `x² − x − 100 < 0`. The quadratic `x² − x − 100` has roots at about `−9.51` and `10.51`, so the inequality holds for the integers from `−9` to `10` and fails for every `x ≥ 11` and every `x ≤ −10`. Running the test with verbose output shows the search. In one run from the lecture notebook (your run will differ in the details), Hypothesis first tried `x = 0`, which passes, and then a random value, `x = 1,391,879,151`, which fails because its square is enormous. It then began shrinking:
+
+| Tried | `x² − 100 < x`? | What Hypothesis learns |
+|---|---|---|
+| 1,391,879,151 | fails | a counterexample exists, start shrinking |
+| 36 | fails | much smaller and still failing |
+| 18 | fails | |
+| 16 | fails | |
+| 12 | fails | |
+| 10 | passes (`0 < 10`) | 10 is too small |
+| 11 | fails (`21` is not less than `11`) | 11 is the boundary |
+| −1, −9, −3, −5 | pass | |
+| −10 | fails (`0` is not less than `−10`) | the negative boundary |
+| −11 | fails | |
+
+The search behaves much like a binary search towards zero. Large jumps quickly reduce the size of the input, and once a passing value (`10`) is found next to a failing one (`11`), the boundary has been located. Hypothesis then checks negative values as well, which find the other boundary at `−10`. The report the user sees is a single small counterexample, `x = 11` or `x = −10`, at the very edge of where the property stops holding. That is far easier to debug than a ten-digit number.
+
+The same happens with the property `assert x**2 > x`. It is false for `x = 0` (since `0 > 0` is false) and for `x = 1`, and Hypothesis shrinks any failure down to `x = 0`, the simplest integer of all.
 
 <Mermaid code={`flowchart LR
-  a["1,391,879,151 ✗"] --> b["36 ✗"] --> c["18 ✗"] --> d["12 ✗"] --> e["10 ✓"] --> f["11 ✗"]
-  f --> g["negatives: −1, −9 ✓, −10 ✗"]
-  g --> r(["x = 11 or −10"])`} />
+  G["Strategy"] -->|"generate x"| T["check property on x"]
+  T -->|"pass"| G
+  T -->|"fail"| Sh["Shrink: try simpler x"] --> R["minimal failing x"]`} />
 
-- Finds a **huge** failure, then **binary/delta-shrinks** toward zero.
-- Stops at the **boundary**: 10 passes, 11 fails.
-- For `assert x**2 > x` it shrinks to **x = 0**.
+Internally, Hypothesis does not shrink the value itself but the sequence of random choices that produced it, which is why shrinking works for any strategy, including the custom ones we build below. The course describes the process as binary or delta shrinking: cutting away parts of the input and halving numbers while the failure persists.
 
-<Callout type="tip" title="Memory hook">
-**"Big bug, small story"**: shrinking turns a giant input into the tiniest one that still fails.
-</Callout>
+## Choosing properties: run-length encoding
 
-## Case study: RLE
+Writing the test harness is easy. The real skill in property-based testing is choosing properties that capture the specification without repeating the implementation. A good example is **run-length encoding** (RLE), a simple compression scheme in which a run of identical characters is stored as one character and a count, so that `"AAABBC"` becomes `[('A', 3), ('B', 2), ('C', 1)]`:
 
 ```python
-def rle_encode(s):   # "AAABBC" → [('A',3), ('B',2), ('C',1)]
-    return [(c, len(list(g))) for c, g in itertools.groupby(s)]
-def rle_decode(enc):
-    return "".join(c * k for c, k in enc)
+import itertools
+
+def rle_encode(data: str) -> list[tuple[str, int]]:
+    if not data:
+        return []
+    return [(char, len(list(group))) for char, group in itertools.groupby(data)]
+
+def rle_decode(encoded: list[tuple[str, int]]) -> str:
+    return "".join(char * count for char, count in encoded)
 ```
 
-| Property | Check |
-|---|---|
-| **Round-trip** `f⁻¹(f(s)) = s` | `rle_decode(rle_encode(s)) == s` |
-| **Canonical** | no two adjacent runs share a char: `enc[i][0] != enc[i+1][0]` |
+`itertools.groupby` splits the string into maximal runs of equal characters, and `len(list(group))` counts each run.
 
-Both use `@given(st.text())`.
+A unit test would check a few strings such as `"AAABBC"`. To write properties we instead ask what must be true of *every* encoding. Two answers stand out.
 
-## Valid inputs: 3 ways
+The first is the **round-trip property**. Decoding is meant to undo encoding, so for every string `s`, `rle_decode(rle_encode(s)) == s`. Mathematically this is `f⁻¹(f(s)) = s`, where `f⁻¹` is the inverse of `f`. Round-trip properties exist for every pair of functions that are meant to undo each other: encode and decode, serialise and parse, compress and decompress.
 
-Testing the **decoder** needs valid RLE: counts ≥ 1, no adjacent duplicate chars. A naive `st.lists(st.tuples(st.characters(), st.integers()))` is mostly garbage.
-
-<Mermaid code={`flowchart TB
-  N["naive strategy"] --> A["1 · assume cond<br/>reject bad draws"]
-  N --> C["2 · @st.composite<br/>build valid data"]
-  N --> M["3 · st.text.map rle_encode"]
-  A --> A2["✗ high rejection<br/>FailedHealthCheck / Unsatisfiable"]
-  C --> C2["✓ 100% valid"]
-  M --> M2["✓ concise, but trusts rle_encode"]`} />
-
-<Callout type="warning" title="Trap">
-`assume(False)` **discards** an example. Discard too many and you get a health-check failure or `Unsatisfiable`.
-</Callout>
-
-<Fold title="Code for assume and @st.composite">
+The second is a **structural** or **canonical-form** property. The round trip alone does not stop the encoder from producing silly output: `[('A', 1), ('A', 1)]` decodes to `"AA"` just as well as `[('A', 2)]` does. The encoder is meant to produce the canonical encoding, in which runs are maximal, so no two adjacent pairs share a character: `enc[i][0] != enc[i+1][0]` for every `i`.
 
 ```python
-@settings(suppress_health_check=[HealthCheck.filter_too_much])
+@given(st.text())
+def test_rle_roundtrip(s: str):
+    assert rle_decode(rle_encode(s)) == s
+
+@given(st.text())
+def test_rle_canonical_structure(s: str):
+    encoded = rle_encode(s)
+    for i in range(len(encoded) - 1):
+        assert encoded[i][0] != encoded[i + 1][0]
+```
+
+Both properties are easy to state, neither repeats the encoder's logic, and together they pin down its behaviour closely. Notice what we did *not* claim. It is tempting to add "the encoding is shorter than the input", but that is false: `"ABC"` encodes to three pairs, more data than the three characters it came from. A property that is false of a correct implementation is not a specification, so we check claims like this before writing them down. This is the validation half of the lectures' distinction between verification and validation: the specification itself must match what we actually want.
+
+## Generating valid inputs
+
+The tests above generate strings and run the encoder. To test the *decoder* on its own, we must generate valid encodings directly. A valid RLE encoding has two constraints: every count is at least 1, and no two adjacent pairs share a character. These form the decoder's precondition `P`.
+
+The obvious strategy is
+
+```python
+naive_rle_strategy = st.lists(st.tuples(st.characters(), st.integers()))
+```
+
+which generates lists of `(character, integer)` pairs. Almost none of these are valid. `st.integers()` produces zero and negative numbers as often as positive ones, and with two or more pairs the chance that every count is positive and no two neighbours repeat falls quickly. A test that simply asserted the two constraints on this strategy fails immediately. The question is how to restrict the generator to the valid inputs. There are three approaches.
+
+### Rejection with `assume`
+
+The first approach keeps the naive strategy and throws away invalid draws. Calling `assume(condition)` inside a test tells Hypothesis that if `condition` is false, this example does not count: it is discarded and another is drawn. This is the `if not P(x): return` line of the harness.
+
+```python
+from hypothesis import assume, HealthCheck
+
+@settings(max_examples=1000, suppress_health_check=[HealthCheck.filter_too_much])
 @given(st.lists(st.tuples(st.characters(), st.integers())))
 def test_decode_assume(enc):
-    for _, k in enc: assume(0 < k <= 10_000)
-    for i in range(len(enc) - 1): assume(enc[i][0] != enc[i+1][0])
+    for _, k in enc:
+        assume(0 < k <= 10_000)
+    for i in range(len(enc) - 1):
+        assume(enc[i][0] != enc[i + 1][0])
     assert len(rle_decode(enc)) == sum(k for _, k in enc)
 ```
+
+This works, but it is wasteful. When the precondition holds for only a small fraction of generated values (a **sparse precondition**), most of the effort goes into producing inputs that are then discarded. If `P(x)` holds for 0.01% of inputs, then 99.99% of the runs test nothing. Hypothesis notices this. Without the `suppress_health_check` setting the test fails with a `FailedHealthCheck` warning that the strategy is filtering out a lot of data, and if valid examples are rare enough, Hypothesis gives up with an `Unsatisfiable` error. Worse, the inputs that do survive are biased towards the shortest lists, since a long list is very unlikely to pass every `assume`. So the test mostly checks trivial cases.
+
+<Callout type="warning" title="A common mistake">
+
+`assume` (and the similar `.filter` method on strategies) is fine when the precondition rules out a small fraction of inputs. It is the wrong tool when valid inputs are rare. Each failed `assume` discards an example, and too many discards lead to a health-check failure or `Unsatisfiable`.
+
+</Callout>
+
+### Construction with `@st.composite`
+
+The second approach builds valid data directly, so that nothing is ever discarded. The decorator `@st.composite` turns a function into a strategy. The function receives a `draw` argument, and each call `draw(s)` draws one value from the strategy `s`. We can then assemble those values in whatever way guarantees the precondition:
 
 ```python
 @st.composite
 def valid_rle(draw):
     chars = draw(st.lists(st.characters()))
-    dedup = [c for i, c in enumerate(chars) if i == 0 or chars[i-1] != c]
+    dedup = [c for i, c in enumerate(chars) if i == 0 or chars[i - 1] != c]
     return [(c, draw(st.integers(min_value=1, max_value=50))) for c in dedup]
 
 @given(valid_rle())
@@ -142,97 +206,138 @@ def test_decode(enc):
     assert rle_encode(dec) == enc
 ```
 
-`st.text().map(rle_encode)` is the one-liner, but it **assumes `rle_encode` is correct**.
+The first line draws any list of characters. The second removes adjacent duplicates, which enforces the second constraint. The third pairs each character with a count drawn from `1` to `50`, which enforces the first. Every generated value is valid **by construction**: the precondition holds because of how the data was built, not because bad data was filtered out. Shrinking still works, since Hypothesis shrinks the underlying draws.
 
-</Fold>
+The test checks two properties of the decoder. The decoded length must be the sum of the counts, and re-encoding the decoded string must give back exactly the encoding we started from. The second is the round trip in the other direction, and it holds only because the generated encoding is canonical.
 
-## Fuzzing: who generates ∀x?
+### Mapping with `.map`
 
-**Coverage-guided (greybox) fuzzers** like **AFL** and libFuzzer mutate seen inputs to maximise branch coverage.
+The third approach is the shortest. Every strategy has a `.map(g)` method that applies `g` to each generated value. Since `rle_encode` turns any string into a valid encoding,
+
+```python
+valid_rle_from_string = st.text().map(rle_encode)
+```
+
+generates valid encodings in one line. The catch is that this strategy is only as good as `rle_encode`. If the encoder has a bug, say it occasionally produces two adjacent runs of the same character, then the decoder is tested only on whatever the faulty encoder produces, and the test of the decoder is no longer independent. The `@st.composite` generator does not depend on the code under test, which is why it is the better test of the decoder.
+
+<Mermaid code={`flowchart TB
+  N["naive strategy"] --> A["assume: reject bad draws"]
+  N --> C["@st.composite: build valid data"]
+  N --> M["st.text().map(rle_encode)"]
+  A --> A2["high rejection rate:<br/>FailedHealthCheck or Unsatisfiable"]
+  C --> C2["every example valid"]
+  M --> M2["concise, but trusts rle_encode"]`} />
+
+## Fuzzing and delta debugging
+
+Property-based testing has a close relative in industry, **fuzzing**: running a program on huge numbers of automatically generated inputs, usually looking for crashes. The most widely used fuzzers, such as **AFL** (American Fuzzy Lop) and libFuzzer, are **coverage-guided** or **greybox** fuzzers. "Greybox" means they neither treat the program as a closed box nor analyse its source fully. Instead they instrument the compiled program so that each run reports which branches it executed.
 
 <Mermaid code={`flowchart LR
-  C["seed corpus"] --> P["pick seed"] --> M["mutate<br/>flip bits, splice"]
-  M --> R["run instrumented"] --> D{"new branches?"}
+  C["seed corpus"] --> P["pick a seed"] --> M["mutate:<br/>flip bits, splice inputs"]
+  M --> R["run instrumented program"] --> D{"new branches covered?"}
   D -- "yes: keep" --> C
-  D -- no --> X["discard"]`} />
+  D -- "no" --> X["discard"]`} />
 
-- **AFL** mutates raw bytes → often **invalid** structures.
-- **Structure-aware** fuzzing (grammars) **converges** with PBT + assertions.
-- **Delta debugging** shrinks a failure keeping the same path; not always an "algebraic" minimum.
+The fuzzer starts from a **seed corpus** of example inputs. It repeatedly picks an input, mutates it (flips bits, changes bytes, splices two inputs together), and runs the program. If the run covers a branch never seen before, the new input is added to the corpus, because it has reached new behaviour and is a promising starting point for further mutation. Otherwise it is discarded. Over time the corpus works its way deeper into the program.
 
-<Callout type="note" title="Sparse preconditions">
-If P(x) holds for 0.01% of inputs, fuzzing or `assume` wastes **99.99%** of runs. Generator combinators satisfy P **by construction**.
-</Callout>
+Plain AFL mutates raw bytes, with no knowledge of the input format. For a program that expects structured input, such as a JSON document or a valid RLE encoding, most mutated inputs are invalid and are rejected by the first few lines of parsing. This is the sparse-precondition problem again, and it has the same solution. **Structure-aware** fuzzers generate inputs from a grammar or a typed description, so that every input is well-formed. At that point fuzzing and property-based testing converge: a structure-aware generator plus assertions in the code is a property test, and a property-based testing library with coverage guidance is a fuzzer. In both, generator combinators such as `@st.composite` that satisfy `P` by construction beat filtering.
+
+Fuzzers also face the problem that shrinking solves. A crashing input found after hours of mutation is typically large and full of irrelevant bytes. **Delta debugging** reduces it: it repeatedly removes chunks of the input, first large ones and then smaller ones, and keeps each removal that still makes the program fail in the same way. The result is *locally* minimal, in that removing any single remaining chunk makes the failure disappear. It is not necessarily the smallest failing input overall, the "algebraic" minimum such as `x = 11` in our example, because a smaller failing input that is not a sub-part of the original will never be reached by deleting pieces.
 
 ## Lab 08: testing an AVL tree
 
-<Mermaid code={`flowchart LR
-  ops["operations"] --> T1["tree behaves like a dict"]
-  avl["avl_trees h"] --> T2["delete all keys keeps AVL valid"]
-  chk["check_avl"] --> T1
-  chk --> T2
-  T1 --> MUT["12 mutants: each failing test kills one"]
-  T2 --> MUT`} />
+Lab 08 applies these ideas to the AVL tree from the <a href={`${import.meta.env.BASE_URL}recursion-bst-avl/`}>recursion, BST and AVL</a> page, used as a map from keys to values. The lab has four parts: implement the tree, write a checker `check_avl` for its invariant, write two Hypothesis strategies, and write property tests. The tests are graded by **mutation testing**, an idea worth understanding in its own right.
 
-- `operations()`: insert/delete lists; deletes **target present keys**.
-- `check_avl(tree)`: **order · heights · balance · size**.
-- Each strong property **kills** different mutants.
+### The invariant checker
 
-<Fold title="The 7 strong properties">
+A tree is a valid AVL tree when three conditions hold. First, *BST order*: every key in a node's left subtree is smaller than the node's key, and every key in its right subtree is larger. Second, *correct heights*: each stored height is 1 plus the larger of the children's heights, with a leaf at height 1 and an empty subtree at height 0. Third, *balance*: at every node, the heights of the two subtrees differ by at most 1. The checker `check_avl(tree)` must also confirm that `tree.size` equals the number of nodes.
 
-| Property | Catches |
-|---|---|
-| after every op, `check_avl(t)` | missing rotations, wrong heights, broken order |
-| tree vs `dict` model: same `len`, `in`, `get`, `items()` | lost/duplicate keys, bad replace, bad delete |
-| `items()` keys strictly increasing | traversal bugs |
-| `range_query(lo, hi) == sorted(k for k in model if lo <= k <= hi)` | off-by-one at `lo`/`hi` |
-| `delete` absent key raises `KeyError` **and** leaves tree unchanged | partial mutation before raising |
-| `get(k, "x")` returns a stored falsy value (0, None, "") | `or default` bugs |
-| n sorted inserts give `height() ≤ 1.44·log₂(n+2)` | missing rebalancing |
+Two details make the checker harder than it looks. BST order is a condition on whole subtrees, not on parent-child pairs. In the tree with root 5, left child 2 (with children 1 and 6) and right child 8, every parent and child are in order, yet 6 lies in the left subtree of 5. The fix is to pass down the open interval `(lo, hi)` that a subtree's keys must lie in. And the checker must not trust the stored heights. It computes the real height of each subtree recursively and compares, since otherwise a node storing a wrong height, or an unbalanced tree whose stored heights happen to look balanced, would pass. In short, the checker verifies order, heights, balance and size.
 
-</Fold>
+### Strategies that build valid data
 
-## Building valid AVL trees
+The lab asks for two strategies, and both must build their data constructively, with no `assume` or `.filter`.
 
-A tree of height h ≥ 2 has subtree heights **(h−1, h−1)**, **(h−1, h−2)** or **(h−2, h−1)**.
+`operations()` generates lists of operations, each `("insert", key, value)` or `("delete", key)`. The constraint is that every delete must target a key that is present at that point of the list, so applying the list to an empty tree never raises. A filter would reject almost every list. Instead, the composite function keeps track of the keys inserted so far and, when it draws a delete, draws the key from that set. The grader also checks that the examples are varied: some must insert a key twice (testing replacement), some must contain deletes, and some must be long.
+
+`avl_trees(h)` generates valid AVL trees of height exactly `h`. The key observation is about shapes. A tree of height `h ≥ 2` has a root whose subtrees, by the balance condition, have heights `(h−1, h−1)`, `(h−1, h−2)` or `(h−2, h−1)`. So a shape can be drawn recursively:
 
 ```python
 @st.composite
 def shape(draw, h):
-    if h == 0: return None
-    if h == 1: return ("leaf",)
-    l, r = draw(st.sampled_from([(h-1, h-1), (h-1, h-2), (h-2, h-1)]))
+    if h == 0:
+        return None
+    if h == 1:
+        return ("leaf",)
+    l, r = draw(st.sampled_from([(h - 1, h - 1), (h - 1, h - 2), (h - 2, h - 1)]))
     return ("node", draw(shape(l)), draw(shape(r)))
 ```
 
-- Draw a **shape**, then that many distinct keys, **sort** them, hand out **in-order**.
-- Valid **by construction**: no `assume`, no `.filter`.
-- **Stateful testing:** a `RuleBasedStateMachine` with `@rule`s (insert/delete) and an `@invariant` calling `check_avl`.
+Having drawn a shape, we count its nodes, draw that many distinct integer keys, sort them, and hand them out in in-order (left subtree, node, right subtree). The in-order assignment makes the BST order hold, the shape makes the balance hold, and setting each node's height while building gives correct heights. Every tree is valid by construction. Just as importantly, *every* valid tree of height `h` can be produced, including the smallest. The smallest AVL trees of heights 0, 1, 2, … have 0, 1, 2, 4, 7, 12, 20, … nodes, following `N(h) = N(h−1) + N(h−2) + 1`, and the grader checks that `avl_trees(5)` produces a 12-node tree and that `avl_trees(3)` produces all 15 shapes of height 3. A generator that misses some shapes leaves the bugs that only appear in those shapes untested.
 
-<Callout type="tip" title="Big picture">
-PBT turns a **spec** (round-trip, invariant, model equivalence) into executable checks: Hoare logic, sampled instead of proved.
-</Callout>
+### Properties and mutation testing
 
-## Replay it
+How do we know whether a test suite is any good? Passing on a correct tree says nothing, since an empty suite also passes. **Mutation testing** measures a suite by deliberately introducing bugs. A **mutant** is a copy of a correct program with one small, realistic change, such as a missing rotation or an off-by-one comparison. The suite is run against each mutant, and if at least one test fails, the mutant is **killed**. The fraction of mutants killed is the suite's mutation score. In Lab 08 the grader has 12 mutant AVL trees, runs every test with `max_examples=200` and a fixed seed, and awards 2 marks for each mutant killed.
+
+<Mermaid code={`flowchart LR
+  ops["operations()"] --> T1["tree behaves like a dict"]
+  avl["avl_trees(h)"] --> T2["deleting every key keeps the tree valid"]
+  chk["check_avl"] --> T1
+  chk --> T2
+  T1 --> MUT["12 mutants: a failing test kills one"]
+  T2 --> MUT`} />
+
+Different properties catch different bugs, so a strong suite combines several. The most powerful is **model-based testing**: apply the same operations to the tree and to a Python `dict`, which serves as a simple model of correct behaviour, and check that they always agree. Some properties target specific mistakes that a model comparison could miss.
+
+<Fold title="Seven strong properties and the bugs they catch">
+
+| Property | Catches |
+|---|---|
+| after every operation, `check_avl(t)` holds | missing rotations, wrong heights, broken order |
+| tree vs `dict` model: same `len`, `in`, `get`, `items()` | lost or duplicated keys, bad replace, bad delete |
+| keys of `items()` strictly increasing | traversal bugs |
+| `range_query(lo, hi) == sorted(k for k in model if lo <= k <= hi)` | off-by-one errors at `lo` or `hi` |
+| deleting an absent key raises `KeyError` and leaves the tree unchanged | partial mutation before raising |
+| `get(k, "x")` returns a stored falsy value (`0`, `None`, `""`) | `or default` bugs |
+| `n` sorted inserts give `height() ≤ 1.44·log₂(n+2)` | missing rebalancing |
+
+The falsy-value property deserves a word. A tempting implementation of `get` returns `node.value or default`. That returns `default` whenever the stored value is falsy, so `get(k, "x")` on a key storing `0` wrongly returns `"x"`. Only a test that stores falsy values finds this. Similarly, the height bound catches a tree that never rebalances: inserting keys in sorted order into a plain BST gives a chain of height `n`, while an AVL tree's height stays below about `1.44·log₂(n+2)`. The lab requires 10,000 sorted inserts to give height at most 18.
+
+</Fold>
+
+The second strategy is used for a different kind of property. `avl_trees(h)` produces trees of every possible shape, including ones that a sequence of inserts would rarely produce, so deleting every key from such a tree, in random order, and checking `check_avl` after each delete exercises the rebalancing code on shapes it would otherwise never meet.
+
+A further option is **stateful testing**. Hypothesis's `RuleBasedStateMachine` lets us declare operations as methods marked `@rule` (here insert and delete) and checks marked `@invariant` (here `check_avl`). Hypothesis then generates and shrinks whole sequences of rule calls, checking every invariant after each step. It is the operations strategy and the model comparison packaged as a single class.
+
+## Summary
+
+A unit test checks one chosen input, so its coverage is sparse and biased towards the cases the author already had in mind. A property-based test states a general fact `∀x ∈ G. P(x) ⇒ Q(f(x))`, which is a Hoare triple `{P} f {Q}` checked on many sampled inputs instead of proved for all of them. Hypothesis draws the inputs from a strategy, favouring boundary values, and when a property fails it shrinks the counterexample to a minimal one, as in the trace that reduced 1,391,879,151 to 11. Good properties capture the specification without restating the implementation: round trips, canonical forms, invariants, and agreement with a simple model.
+
+The main practical difficulty is the precondition. Filtering with `assume` wastes effort and fails health checks when valid inputs are sparse. Generators built with `@st.composite` or `.map` satisfy the precondition by construction, and a composite generator has the advantage of not depending on the code under test. Coverage-guided fuzzers such as AFL face the same problem with raw bytes and solve it the same way with structure-aware generation, while delta debugging plays the role of shrinking. Lab 08 brings all of this together: an invariant checker, constructive strategies for operation sequences and AVL shapes, and a suite of properties judged by how many mutants it kills. None of this replaces proof, and proof does not replace it either. As the Cambridge lectures put it, heavier techniques are used together with testing, not instead of it.
+
+## Check your understanding
 
 <Flashcards cards={[
-  { q: "The PBT formula?", a: "`∀x ∈ G. P(x) ⇒ Q(f(x))`" },
+  { q: "What does a property test check?", a: "`∀x ∈ G. P(x) ⇒ Q(f(x))` on many generated inputs: the Hoare triple `{P} f {Q}`, **sampled** instead of proved." },
   { q: "Default `max_examples`?", a: "**100**" },
-  { q: "What does `@given` try first?", a: "**Boundary values**: 0, 1, −1, powers of 2, extremes." },
-  { q: "What is shrinking?", a: "Simplifying a failing input until it's the **minimal** one that still fails." },
-  { q: "RLE round-trip property?", a: "`rle_decode(rle_encode(s)) == s`" },
-  { q: "Downside of `assume`?", a: "High **rejection** rate → health check / `Unsatisfiable`." },
-  { q: "Downside of `st.text().map(rle_encode)`?", a: "It **trusts** `rle_encode` is correct." },
-  { q: "What does AFL mutate?", a: "**Raw bytes**, guided by branch coverage." },
-  { q: "AVL child heights for height h?", a: "(h−1, h−1), (h−1, h−2) or (h−2, h−1)." },
+  { q: "What does `@given` try besides random values?", a: "**Boundary values**: 0, 1, −1, values near powers of 2, extremes." },
+  { q: "What is shrinking?", a: "Simplifying a failing input, keeping it failing, until it is the **minimal** counterexample." },
+  { q: "Where does `assert x**2 - 100 < x` shrink to?", a: "`x = 11` (or `x = −10`): it holds exactly for −9 ≤ x ≤ 10." },
+  { q: "The two RLE properties?", a: "Round-trip `rle_decode(rle_encode(s)) == s`, and canonical form: no two adjacent runs share a character." },
+  { q: "Downside of `assume` with a sparse precondition?", a: "Most draws are **rejected**: `FailedHealthCheck` or `Unsatisfiable`, and survivors are biased to trivial cases." },
+  { q: "Downside of `st.text().map(rle_encode)`?", a: "It **trusts** `rle_encode` to be correct, so the decoder test is not independent." },
+  { q: "What does AFL mutate, and what guides it?", a: "**Raw bytes**, guided by branch coverage." },
+  { q: "What does it mean to kill a mutant?", a: "At least one test fails on the deliberately buggy copy." },
+  { q: "AVL subtree heights for a tree of height h ≥ 2?", a: "(h−1, h−1), (h−1, h−2) or (h−2, h−1)." },
 ]} />
 
 <Quiz questions={[
-  { q: "`assert x**2 - 100 < x` fails. Shrunk positive counterexample?", options: ["10", "11", "36", "100"], answer: 1, why: "It holds up to 10 and first fails at 11." },
-  { q: "Best way to generate valid inputs for a sparse precondition?", options: ["`assume` in a loop", "`@st.composite` or `.map`", "raise `max_examples`"], answer: 1, why: "Build valid data **by construction**, so nothing is wasted." },
-  { q: "Which are properties of RLE we tested?", options: ["round-trip", "canonical (no equal adjacent runs)", "output is sorted", "encoding is shorter"], answer: [0, 1], why: "Round-trip and canonical form. RLE can be longer than the input." },
-  { q: "Deleting an absent key in the AVL lab should…", options: ["silently do nothing", "raise `KeyError` and leave the tree unchanged", "rebalance the tree"], answer: 1, why: "Catches partial mutation before raising." },
-  { q: "How should multiple settings be applied?", options: ["Stack several `@settings`", "One `@settings` with all options", "Pass them to `@given`"], answer: 1, why: "Combine options into a single decorator." },
+  { q: "`assert x**2 - 100 < x` fails. What is the shrunk positive counterexample?", options: ["10", "11", "36", "100"], answer: 1, why: "The inequality holds up to 10 (`0 < 10`) and first fails at 11 (`21` is not less than `11`)." },
+  { q: "What is the best way to generate inputs for a sparse precondition?", options: ["`assume` inside the test", "`@st.composite` or `.map`", "Raise `max_examples`"], answer: 1, why: "Build valid data by construction, so no examples are wasted. More examples only means more rejections." },
+  { q: "Which are properties of RLE that we tested?", options: ["round-trip", "canonical form (no equal adjacent runs)", "output is sorted", "encoding is shorter than the input"], answer: [0, 1], why: "Round-trip and canonical form. An encoding can be longer than its input, e.g. for `\"ABC\"`." },
+  { q: "In the AVL lab, deleting an absent key should…", options: ["silently do nothing", "raise `KeyError` and leave the tree unchanged", "rebalance the tree"], answer: 1, why: "The property also catches implementations that partly modify the tree before raising." },
+  { q: "How should several settings be applied to one test?", options: ["Stack several `@settings` decorators", "One `@settings` with all the options", "Pass them to `@given`"], answer: 1, why: "Hypothesis expects the options combined in a single decorator." },
+  { q: "Why is delta debugging's result not always the smallest failing input?", options: ["It only removes parts of the original input", "It runs too few examples", "It ignores coverage"], answer: 0, why: "It keeps deleting chunks while the failure persists, so it finds a locally minimal input. A smaller failing input that is not a piece of the original is never reached." },
 ]} />
 
-<p class="sources">Sources: Property Based Testing .ipynb, lab08_assignment.pdf</p>
+<p class="sources">Sources: Property Based Testing .ipynb, lab08_assignment.pdf, Cambridge Hoare Logic lectures 1–2 (Pulte, 2022/23)</p>

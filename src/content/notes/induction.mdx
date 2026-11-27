@@ -1,74 +1,183 @@
 ---
 title: "Mathematical Induction"
-description: "Prove ∀n. P(n) with a base case and a step. It also powers loop invariants and recursion."
+description: "The principle of mathematical induction stated precisely, why it is valid, how to write an induction proof, and how loop invariants and recursive functions rely on it."
 part: reasoning
 order: 4
 ---
 import { Callout, Rules, Rule, Mermaid, Flashcards, Quiz } from '@/components/notes';
 
-<Callout type="tip" title="TL;DR">
+Many statements in computer science are claims about *every* natural number: a formula for a sum holds for every `n`, a loop is correct however many times it runs, a recursive function returns the right answer for every input. We cannot check infinitely many cases one at a time. **Mathematical induction** is the proof technique that handles all of them with two finite arguments: one for the first case, and one showing that each case carries over to the next.
 
-- **Base** `P(0)` + **step** `∀k. P(k) → P(k+1)` ⟹ `∀n. P(n)`.
-- The step must hold for **every k**, not just one.
-- **Loop invariants** and **recursion** proofs are induction in disguise.
+Induction has already appeared twice in this part of the course without being named. On the <a href={`${import.meta.env.BASE_URL}loop-invariants/`}>loop invariants</a> page, initialisation and maintenance together showed that an invariant holds at every loop test, and on the <a href={`${import.meta.env.BASE_URL}hoare-logic/`}>Hoare logic</a> page the while rule was justified "by a simple induction on the number of iterations". This page states the principle precisely, explains why it is valid, works through a proof and a template for writing one, and then extends it to strong induction and to structural induction on trees. It ends by making the connection with loops and recursion explicit. The precise statement matters for the exam: past-paper question 2 tests it directly.
 
-</Callout>
+## The principle of induction
 
-## The principle
-
-Let `P : ℕ → Prop` be a property of natural numbers.
+We write `ℕ` for the natural numbers `0, 1, 2, …` and consider a property `P` of natural numbers. Formally `P : ℕ → Prop`: for each number `n`, `P(n)` is a statement (a proposition) that is either true or false. For example, `P(n)` might be "`1 + 2 + … + n = n(n+1)/2`". We want to prove `∀n ∈ ℕ. P(n)`, read "for every natural number `n`, `P(n)` holds".
 
 <Rules>
   <Rule name="Induction on ℕ" premises={["P(0)", "∀k ∈ ℕ. P(k) → P(k+1)"]} conclusion="∀n ∈ ℕ. P(n)" note="base case + inductive step ⟹ P holds for every n" />
 </Rules>
 
-| Piece | Name | You prove… |
-|---|---|---|
-| `P(0)` | **base case** | P for the first number, directly |
-| `∀k. P(k) → P(k+1)` | **inductive step** | for an *arbitrary* k: assume P(k) (the **IH**), derive P(k+1) |
-| `∀n. P(n)` | **conclusion** | what induction gives you for free |
+As on the Hoare logic page, the rule is read "if both premises above the line have been proved, then the conclusion below the line follows". The arrow `→` means "implies": `P(k) → P(k+1)` says "if `P(k)` is true, then `P(k+1)` is true".
 
-## Dominoes 🁢
+<Callout type="note" title="Definition: proof by induction">
+
+To prove `∀n ∈ ℕ. P(n)` by induction we prove two things:
+
+- the **base case** `P(0)`, directly;
+- the **inductive step** `∀k ∈ ℕ. P(k) → P(k+1)`: we take an *arbitrary* `k`, assume `P(k)` (this assumption is the **inductive hypothesis**, or IH), and derive `P(k+1)`.
+
+The principle of induction then gives `∀n ∈ ℕ. P(n)`.
+
+</Callout>
+
+| Piece | Name | We prove… |
+|---|---|---|
+| `P(0)` | base case | `P` for the first number, directly |
+| `∀k. P(k) → P(k+1)` | inductive step | for an *arbitrary* `k`: assume `P(k)` (the IH), derive `P(k+1)` |
+| `∀n. P(n)` | conclusion | nothing more: the principle gives it |
+
+The inductive step is a single argument about a general `k`, not infinitely many arguments. Inside it we do not know which number `k` is; we only know that `P(k)` holds, and from that we must show `P(k+1)`. Because the argument never used anything special about `k`, it works for every `k`, and that is what the `∀k` records.
+
+The base case need not be 0. To prove a property for all `n ≥ 1`, or all `n ≥ 2`, we prove `P(1)` or `P(2)` as the base and the step for every `k` from that point on.
+
+## Why induction is valid
+
+The usual picture is a row of dominoes. The base case knocks over the first domino. The inductive step says that every domino, whichever it is, knocks over the next one when it falls. Together they knock over every domino in the row.
 
 <Mermaid code={`flowchart LR
   P0["P(0)<br/>base ✓"] -->|"step k=0"| P1["P(1)"] -->|"step k=1"| P2["P(2)"] -->|"step k=2"| P3["P(3)"] --> D["…"] --> Pn["P(n) for every n"]`} />
 
-- The **base** knocks over the first domino.
-- The **step** proves *every* domino knocks over the next.
-- Together they reach **every n**.
+Concretely, to see that `P(3)` holds we can unfold the argument: `P(0)` by the base case; `P(0) → P(1)` by the step with `k = 0`, so `P(1)`; `P(1) → P(2)` by the step with `k = 1`, so `P(2)`; `P(2) → P(3)` by the step with `k = 2`, so `P(3)`. For any particular `n` the chain has `n` links and is finite. Induction is the guarantee that the chain exists for *every* `n`, without our having to write it out.
 
-<Callout type="tip" title="Memory hook">
-**"Push the first, link them all"**: base pushes, step links.
-</Callout>
+A more careful argument uses the fact that every non-empty set of natural numbers has a smallest element. Suppose both premises hold, but `P(n)` fails for some `n`. Among the numbers for which `P` fails, take the smallest, `m`. It is not 0, because the base case says `P(0)` holds. So `m − 1` is a natural number, and since `m − 1 < m`, `P(m − 1)` holds by the choice of `m` as the smallest failure. The inductive step with `k = m − 1` then gives `P(m)`, contradicting our choice of `m`. So `P(n)` cannot fail for any `n`.
 
-## Precision matters (Exam Q2)
+### Both premises are needed
 
-- The conclusion is **`∀n ∈ ℕ. P(n)`** (S4), not the open formula `P(n)` (S3).
-- The step needs **`∀k ∈ ℕ. (P(k) → P(k+1))`**. One particular k is **not enough**.
-- So: induction proves **S4** by proving **S1** and **(∀k ∈ ℕ, S2)**.
+Each premise on its own can be true of a false statement, which shows that neither can be dropped.
+
+Without the base case, consider `P(n)`: "`n = n + 1`". The inductive step goes through: if `k = k + 1`, then adding 1 to both sides gives `k + 1 = k + 2`, which is `P(k+1)`. But `P(0)` is `0 = 1`, which is false, and indeed `P(n)` is false for every `n`. The dominoes are all linked, but nothing starts them falling.
+
+Without the step holding for *every* `k`, consider `P(n)`: "`n < 3`". The base case `P(0)` holds, and the implication `P(k) → P(k+1)` holds for `k = 0` and `k = 1`. It fails for `k = 2`, since `P(2)` is true and `P(3)` is false. Knowing the step for some values of `k` gets us only as far as the first broken link.
+
+## Stating the principle precisely
+
+The exact form of the rule is examined. Past-paper question 2 gives a property `P : ℕ → Prop` and four statements:
+
+- S1: `P(0)`
+- S2: `P(k) → P(k+1)`
+- S3: `P(n)`
+- S4: `∀n ∈ ℕ, P(n)`
+
+and asks which description of induction is correct. Two points decide it.
+
+First, the conclusion of induction is **S4**, not S3. S3, `P(n)`, is an *open formula*: it mentions a variable `n` that is not bound by any quantifier, so on its own it is not a statement that is true or false, only a statement about whichever `n` we have in mind. Induction proves the closed statement `∀n ∈ ℕ. P(n)`.
+
+Second, S2 as written is about one particular `k`. Knowing `P(k) → P(k+1)` for one `k` is not enough, as the "`n < 3`" example above shows. The inductive step must be **`∀k ∈ ℕ. (P(k) → P(k+1))`**: the implication for every `k`.
+
+So induction proves S4 by proving S1 and `∀k ∈ ℕ, S2`. An option that concludes S3, or that concludes S4 from S1 and a single instance of S2, is wrong.
 
 <Callout type="important" title="Exam">
-That's option **C** in past-paper Q2. See <a href={`${import.meta.env.BASE_URL}exam-q2-q5/#q2-induction-basics`}>Q2 solved</a>.
+
+This is option **C** in past-paper Q2: "proves S4 from S1 and `∀k ∈ ℕ, S2`". The full solution is on the <a href={`${import.meta.env.BASE_URL}exam-q2-q5/#q2-induction-basics`}>solved paper</a>.
+
 </Callout>
 
-## Worked: 1 + 2 + … + n
+## A worked example: 1 + 2 + … + n
 
-**P(n):** `Σᵢ₌₁ⁿ i = n(n+1)/2`
+We prove that for every natural number `n`,
 
-| Part | Work |
-|---|---|
-| **Base** n = 0 | empty sum = 0, and 0·1/2 = 0 ✓ |
-| **IH** | fix arbitrary k, assume `Σ₁ᵏ i = k(k+1)/2` |
-| **Step** | `Σ₁ᵏ⁺¹ i = k(k+1)/2 + (k+1) = (k+1)(k+2)/2` ✓ |
-| **Conclude** | by induction, `∀n ∈ ℕ. P(n)` ∎ |
+```text
+P(n):   1 + 2 + … + n  =  n(n + 1) / 2
+```
 
-<Callout type="tip" title="Remember">
-The step **must use the IH**. If you never use it, you're not doing induction.
+Writing `Σᵢ₌₁ⁿ i` for the sum `1 + 2 + … + n` (with the empty sum, when `n = 0`, equal to 0), the claim is `∀n ∈ ℕ. Σᵢ₌₁ⁿ i = n(n+1)/2`.
+
+**Base case** (`n = 0`). The left side is the empty sum, 0. The right side is `0 · 1 / 2 = 0`. They are equal, so `P(0)` holds.
+
+**Inductive step.** Let `k ∈ ℕ` be arbitrary, and assume the inductive hypothesis
+
+```text
+IH:   1 + 2 + … + k  =  k(k + 1) / 2
+```
+
+We must show `P(k+1)`, that is `1 + 2 + … + (k + 1) = (k + 1)(k + 2) / 2`. The sum up to `k + 1` is the sum up to `k` plus one more term:
+
+```text
+1 + … + k + (k + 1)  =  k(k + 1)/2 + (k + 1)          by the IH
+                     =  (k(k + 1) + 2(k + 1)) / 2
+                     =  (k + 1)(k + 2) / 2
+```
+
+which is `P(k+1)`.
+
+**Conclusion.** By the principle of mathematical induction, `∀n ∈ ℕ. P(n)`. ∎
+
+The key move in the step was to find `P(k)` inside `P(k+1)`: the sum up to `k + 1` *contains* the sum up to `k`, and the IH tells us its value. This is the general shape of an inductive step. If a step never uses the IH, it is not really an induction, and it usually means either the IH was not needed (a direct proof would do) or the argument has a gap.
+
+## Writing an induction proof
+
+A clear induction proof has four labelled parts. Using the same skeleton every time makes it easy for a reader, or a marker, to check that nothing is missing.
+
+1. **Claim.** `∀n ∈ ℕ. P(n)`, where `P(n) ≝ …` (`≝` means "is defined as"). State `P` explicitly; most errors in induction proofs come from an unclear `P`.
+2. **Base case** (`n = 0`). Show `P(0)` directly.
+3. **Inductive step.** "Let `k ∈ ℕ` be arbitrary, and assume `P(k)` (IH)." Then derive `P(k+1)`, pointing out where the IH is used.
+4. **Conclusion.** "By the principle of mathematical induction, `∀n ∈ ℕ. P(n)`." ∎
+
+<Callout type="warning" title="A common mistake">
+
+Leaving out "let `k` be arbitrary". Without it, the step reads as a statement about one particular `k`, which proves only a single instance of S2. That is exactly the distinction tested in Q2. Saying that `k` is arbitrary is what licenses the `∀k`.
+
 </Callout>
 
-## Loop invariants = induction
+## Strong induction
 
-Let Iₖ be "P holds at the loop test after k iterations." The **while rule** is induction on iterations.
+Sometimes `P(k+1)` does not follow from `P(k)` alone, but does follow from earlier cases. **Strong induction** (also called complete induction) allows the inductive hypothesis to cover *every* smaller number:
+
+<Rules>
+  <Rule name="Strong induction" premises={["∀k. (∀j < k. P(j)) → P(k)"]} conclusion="∀n ∈ ℕ. P(n)" note="the IH covers every smaller number, not just k−1" />
+</Rules>
+
+In words: if, for every `k`, the truth of `P` for all numbers below `k` implies `P(k)`, then `P` holds for all `n`. There is no separate base case in this form. For `k = 0` there are no smaller numbers, so the hypothesis is empty and `P(0)` must be proved outright; in practice the first few values are usually handled separately.
+
+Strong induction is no more powerful than ordinary induction. Apply ordinary induction to the property `Q(n)`: "`P(j)` holds for every `j ≤ n`". The base case `Q(0)` is `P(0)`, and the step from `Q(k)` to `Q(k+1)` is exactly the strong-induction premise for `k + 1`. So `∀n. Q(n)`, and hence `∀n. P(n)`. Strong induction is simply more convenient when the step needs to look back further than one place.
+
+Two typical uses in this course:
+
+- **The smallest AVL tree.** On the <a href={`${import.meta.env.BASE_URL}recursion-bst-avl/`}>trees page</a>, the minimum number of nodes in an AVL tree of height `h` satisfies `N(h) = N(h−1) + N(h−2) + 1`, with `N(0) = 0` and `N(1) = 1`. Any claim about `N(h)` needs the claim for both `h − 1` and `h − 2`. For instance, `N(h) = fib(h + 2) − 1` (with `fib(1) = fib(2) = 1`). Check `h = 0` and `h = 1` directly: `fib(2) − 1 = 0` and `fib(3) − 1 = 1`. For `h ≥ 2`, the strong IH for `h − 1` and `h − 2` gives `N(h) = (fib(h + 1) − 1) + (fib(h) − 1) + 1 = fib(h + 2) − 1`. Since Fibonacci numbers grow exponentially, so does `N(h)`, which is why AVL trees have logarithmic height.
+- **Euclid's algorithm.** `gcd(x, y)` recurses on `gcd(y, x mod y)`. The second argument drops from `y` to `x mod y`, which is smaller than `y` but not necessarily `y − 1`. A proof by induction on the second argument therefore needs the hypothesis for every smaller value.
+
+## Structural induction
+
+Induction is not limited to numbers. Any data type built up from smaller pieces of the same type supports an induction principle that follows its structure. For the binary trees of the trees page, a tree is either empty (`None`) or a node with a key and two subtrees. **Structural induction** on trees says: to prove a property `P(t)` for every tree `t`,
+
+- prove `P(None)` for the empty tree (the base case), and
+- for a node with subtrees `L` and `R`, assume `P(L)` and `P(R)` (the IH, one for each subtree) and prove `P` for the node.
+
+<Mermaid code={`flowchart TD
+  N["node: assume P(L) and P(R), prove P(node)"] --> L["left subtree L<br/>P(L) by IH"]
+  N --> R["right subtree R<br/>P(R) by IH"]
+  L --> E1["…"] --> B1["None: base case"]
+  R --> E2["…"] --> B2["None: base case"]`} />
+
+This is valid for the same reason as ordinary induction: every tree is finite, and each subtree is strictly smaller than the tree containing it, so a smallest counterexample cannot exist. Equivalently, it is strong induction on the number of nodes.
+
+As an example, consider the size function:
+
+```python
+def size(t):
+    if t is None:
+        return 0
+    return 1 + size(t["left"]) + size(t["right"])
+```
+
+We claim that a tree with `size(t)` nodes has exactly `size(t) + 1` empty subtrees (`None` links). For the empty tree, `size` is 0 and there is one `None`, the tree itself. For a node, the IH says that `L` has `size(L) + 1` empty subtrees and `R` has `size(R) + 1`. The node's empty subtrees are those of `L` together with those of `R`, so it has `size(L) + size(R) + 2 = (1 + size(L) + size(R)) + 1` of them, which is the size of the node plus one.
+
+Recursive tree functions are proved correct in exactly this way. `bst_insert` is correct on the empty tree, where it creates a node, and on a node it is correct provided the recursive insertion into the chosen subtree is correct, which is the IH. `check_avl` returns the right height and count for `None`, and for a node it combines the results for the two subtrees, which are correct by the IH.
+
+## Loop invariants are induction
+
+The three obligations for a loop invariant are an induction in disguise. Let `Iₖ` be the statement "if the loop reaches its test for the `k`-th time, `P` holds there", counting from `k = 0` for the first test. Initialisation proves `I₀`. Maintenance, `{P ∧ B} S {P}`, proves that if `P` holds at one test and the loop continues, it holds at the next, which is `Iₖ → Iₖ₊₁` for every `k`. By induction, `∀k. Iₖ`: the invariant holds at every test the loop ever reaches. The exit obligation then *uses* this result at the final test, where `¬B` is also known.
 
 <Mermaid code={`flowchart LR
   I0["I₀: P on entry<br/>init = BASE"] --> I1["I₁"] --> I2["I₂"] --> Ik["… Iₖ"]
@@ -78,58 +187,55 @@ Let Iₖ be "P holds at the loop test after k iterations." The **while rule** is
 
 | Loop reasoning | Induction |
 |---|---|
-| initialization | base case `P(0)` |
+| initialisation | base case `P(0)` |
 | maintenance `{P ∧ B} S {P}` | step `P(k) → P(k+1)` |
 | holds at every check | `∀k. P(k)` |
 | exit `P ∧ ¬B ⇒ Post` | use the result |
 
-## Recursion + structural induction
+This is why the maintenance step must work for an *arbitrary* iteration, just like the inductive step: we prove `{P ∧ B} S {P}` once, using only `P` and `B`, never the iteration number. The Cambridge lectures do not discuss induction directly, but their invariant obligations (the invariant must hold initially, be preserved by the body when `B` is true, and imply the postcondition when `B` is false) are this base case, this step, and this use of the conclusion. Proving the while rule itself sound is, likewise, an induction on the number of iterations.
 
-Prove recursive code by **inducting on input size**:
+Take the factorial loop from the loop invariants page, `while x != 0: y = y * x; x = x - 1`, with invariant `y · x! = X!`. The base case is that `1 · X! = X!` before the loop. The step is that one iteration replaces `y` by `y · x` and `x` by `x − 1`, and `(y · x) · (x − 1)! = y · x!`, so the product is unchanged. By induction it equals `X!` at every test, and at exit `x = 0` turns it into `y = X!`.
+
+## Recursion is induction
+
+A recursive function is proved correct by induction on the size of its input, and the structure of the proof mirrors the structure of the code:
 
 ```python
 def fact(n):
-    if n == 0: return 1          # base case ↔ P(0)
-    return n * fact(n - 1)       # trusts fact(n-1) (IH) ↔ step
+    if n == 0:
+        return 1                 # base case: matches P(0)
+    return n * fact(n - 1)       # trusts fact(n - 1): the IH
 ```
 
-- **Base:** `fact(0) = 1 = 0!` ✓
-- **Step:** assume `fact(k) = k!`. Then `fact(k+1) = (k+1)·k! = (k+1)!` ✓
-- **Structural induction** on trees: prove for the **empty tree**, then show both subtrees OK ⇒ node OK. `check_avl` and `bst_insert` work this way.
+Let `P(n)` be "`fact(n)` returns `n!`".
 
-## Strong induction
+- **Base case.** `fact(0)` returns 1, and `0! = 1`.
+- **Inductive step.** Let `k ∈ ℕ` be arbitrary and assume `fact(k)` returns `k!` (IH). Then `fact(k + 1)` returns `(k + 1) · fact(k)`, which by the IH is `(k + 1) · k! = (k + 1)!`.
 
-<Rules>
-  <Rule name="Strong induction" premises={["∀k. (∀j < k. P(j)) → P(k)"]} conclusion="∀n ∈ ℕ. P(n)" note="the IH covers every smaller number, not just k−1" />
-</Rules>
+By induction, `fact(n)` returns `n!` for every `n ∈ ℕ`.
 
-Use it when the step needs **more than k−1**:
+The IH plays the role of "trusting the recursive call". When we write a recursive function we assume that the call on the smaller input does its job, and only check that the current call uses it correctly. Induction is what makes that assumption legitimate, but only if the recursive call really is on a smaller input that eventually reaches a base case. `fact(-1)` calls `fact(-2)`, `fact(-3)`, and so on without end (in practice Python stops it with a `RecursionError`), because −1 is not a natural number and the descent never reaches 0. The precondition `n ≥ 0` is exactly what places the input in `ℕ`, where induction applies. For recursion on other structures, such as trees or the second argument of `gcd`, the same argument uses structural or strong induction.
 
-- AVL minimum nodes: `N(h) = N(h−1) + N(h−2) + 1`
-- GCD, recursing on `x mod y`
+## Summary
 
-## Answer template
+Mathematical induction proves a statement `∀n ∈ ℕ. P(n)` from two premises: the base case `P(0)` and the inductive step `∀k ∈ ℕ. P(k) → P(k+1)`, in which `k` is arbitrary and `P(k)` is the inductive hypothesis. It is valid because a smallest counterexample would contradict one of the two premises, and both premises are necessary: a step without a base can "prove" `n = n + 1`, and a step that holds only for some `k` breaks the chain. Precision matters: the conclusion is the closed statement `∀n. P(n)`, not the open formula `P(n)`, and the step must hold for every `k`, which is the content of exam Q2.
 
-1. **Claim.** `∀n ∈ ℕ. P(n)`, where `P(n) ≝ …`.
-2. **Base (n = 0).** … ✓
-3. **Inductive step.** Let k ∈ ℕ be **arbitrary**; assume P(k) (**IH**). Then … (use IH) … = P(k+1) ✓
-4. **Conclusion.** By the principle of mathematical induction, `∀n ∈ ℕ. P(n)`. ∎
+Strong induction lets the hypothesis cover every smaller value and is equivalent to ordinary induction; structural induction follows the shape of a data type such as a binary tree. The same pattern underlies the rest of this part of the course. Loop invariants are proved by induction on the number of iterations, with initialisation as the base case and maintenance as the step, and recursive functions are proved correct by induction on their input, with the recursive call justified by the inductive hypothesis.
 
-<Callout type="warning" title="Trap">
-Write **"arbitrary k"**. Without it, the step only covers one k, and that's the Q2 trap.
-</Callout>
-
-## Replay it
+## Check your understanding
 
 <Flashcards cards={[
   { q: "Induction rule?", a: "`P(0)` and `∀k. P(k) → P(k+1)` give `∀n. P(n)`." },
   { q: "What is the IH?", a: "The **inductive hypothesis**: assume P(k) for an arbitrary k." },
   { q: "Why isn't S3 the conclusion in Q2?", a: "S3 `P(n)` is an **open** formula. Induction concludes `∀n. P(n)`." },
+  { q: "Why is induction valid?", a: "A smallest counterexample m cannot be 0 (base case), and P(m − 1) would give P(m) by the step." },
+  { q: "What goes wrong without a base case?", a: "The step for `P(n): n = n + 1` holds, yet every P(n) is false." },
   { q: "Loop init corresponds to…", a: "The **base case**." },
   { q: "Loop maintenance corresponds to…", a: "The **inductive step**." },
   { q: "Step in the sum proof?", a: "`k(k+1)/2 + (k+1) = (k+1)(k+2)/2`" },
   { q: "Strong induction IH?", a: "P(j) for **all j < k**, not just k−1." },
   { q: "Structural induction base on trees?", a: "The **empty tree**." },
+  { q: "In a recursive function, what plays the role of the IH?", a: "Trusting that the recursive call on the smaller input returns the right answer." },
 ]} />
 
 <Quiz questions={[
@@ -137,6 +243,8 @@ Write **"arbitrary k"**. Without it, the step only covers one k, and that's the 
   { q: "In the while rule, `{P ∧ B} S {P}` plays the role of…", options: ["base case", "inductive step", "conclusion"], answer: 1, why: "It moves P from iteration k to k+1." },
   { q: "When do you need strong induction?", options: ["Always", "When the step needs P(k−2) or smaller too", "Only for loops"], answer: 1, why: "E.g. `N(h) = N(h−1) + N(h−2) + 1`." },
   { q: "Which are parts of an induction proof?", options: ["base case", "inductive step", "a counterexample", "conclusion"], answer: [0, 1, 3], why: "Counterexamples disprove; they're not part of induction." },
+  { q: "For `P(n): n < 3`, which holds?", options: ["`P(0)`", "`∀k. P(k) → P(k+1)`", "`∀n. P(n)`"], answer: 0, why: "The step fails at k = 2, so the conclusion does not follow." },
+  { q: "Why does `fact(-1)` not contradict the induction proof of `fact`?", options: ["−1 is not in ℕ, so the claim never covered it", "The base case is wrong", "The inductive step is wrong"], answer: 0, why: "The proof is about n ∈ ℕ; for −1 the recursion never reaches the base case." },
 ]} />
 
-<p class="sources">Sources: CS6.303 Endsems (Q2)</p>
+<p class="sources">Sources: CS6.303 Endsems (Q2), lec 2 Jupyter Notebook.ipynb, Cambridge Hoare Logic lectures 1–2 (Pulte, 2022/23)</p>
