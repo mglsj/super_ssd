@@ -4,18 +4,24 @@ import { ThemeInitScript } from '@starwind-ui/astro/theme';
 import { Button } from '@/components/starwind/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/starwind/sheet';
 import { getNotes, PARTS } from '@/lib/notes';
+import { SITE } from '@/lib/site';
 
 interface Props {
   title: string;
   description?: string;
-  /** id of the note being shown, for the active sidebar link */
+  /** id of the note being shown, for the active sidebar link and its OG image */
   current?: string;
   /** "On this page" headings */
   toc?: { slug: string; text: string }[];
 }
-const { title, description = 'Study notes for Software Systems Development', current, toc = [] } = Astro.props;
+const { title, description = SITE.description, current, toc = [] } = Astro.props;
 const notes = await getNotes();
 const groups = PARTS.map((p) => ({ ...p, items: notes.filter((n) => n.data.part === p.id) }));
+
+const base = import.meta.env.BASE_URL;
+const pageTitle = current ? `${title} · ${SITE.name}` : title;
+const canonical = new URL(Astro.url.pathname, Astro.site);
+const ogImage = new URL(`${base}og/${current ?? 'index'}.png`, Astro.site);
 ---
 
 <!doctype html>
@@ -23,9 +29,32 @@ const groups = PARTS.map((p) => ({ ...p, items: notes.filter((n) => n.data.part 
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
     <meta name="description" content={description} />
-    <link rel="icon" type="image/svg+xml" href={`${import.meta.env.BASE_URL}favicon.svg`} />
-    <title>{current ? `${title} · SSD Notes` : title}</title>
+    <link rel="canonical" href={canonical} />
+
+    <link rel="icon" href={`${base}favicon.ico`} sizes="48x48" />
+    <link rel="icon" type="image/svg+xml" href={`${base}favicon.svg`} />
+    <link rel="apple-touch-icon" href={`${base}apple-touch-icon.png`} />
+    <meta name="theme-color" content="#f8f2e6" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1f1a15" media="(prefers-color-scheme: dark)" />
+
+    <meta property="og:type" content={current ? 'article' : 'website'} />
+    <meta property="og:site_name" content={SITE.name} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content="en_IN" />
+    <meta property="og:image" content={ogImage} />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content={`${title}: ${description}`} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImage} />
+
     <ThemeInitScript />
   </head>
   <body class="bg-background text-foreground font-sans antialiased">
@@ -62,7 +91,7 @@ const groups = PARTS.map((p) => ({ ...p, items: notes.filter((n) => n.data.part 
           </SheetContent>
         </Sheet>
 
-        <a href={import.meta.env.BASE_URL} class="font-serif text-xl font-semibold tracking-tight">SSD Notes</a>
+        <a href={import.meta.env.BASE_URL} class="font-serif text-xl font-semibold tracking-tight">{SITE.name}</a>
         <div class="flex-1"></div>
         <Button variant="ghost" size="icon-sm" data-theme-toggle aria-label="Switch between light and dark">
           <svg class="dark:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>

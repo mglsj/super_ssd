@@ -1,12 +1,13 @@
 ---
 import Base from '@/layouts/Base.astro';
 import { getNotes, PARTS } from '@/lib/notes';
+import { SITE } from '@/lib/site';
 
 const notes = await getNotes();
 ---
 
-<Base title="SSD Notes">
-  <h1 class="font-serif text-4xl font-semibold tracking-tight md:text-5xl">SSD Notes</h1>
+<Base title={SITE.name}>
+  <h1 class="font-serif text-4xl font-semibold tracking-tight md:text-5xl">{SITE.name}</h1>
   <p class="prose-body mt-4 text-muted-foreground">
     Notes for Software Systems Development: Python, then specifications, loop invariants, Hoare logic and induction.
     Each topic opens with a TL;DR, keeps sections short, and ends with flashcards and a quiz. Short on time? Start with
