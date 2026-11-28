@@ -147,27 +147,34 @@ The correct way to check the property is to notice that each node's key is const
 
 ## Insertion and search
 
-A node is a dictionary holding a key and references to two children, with `None` standing for an empty subtree:
+Lab 08 fixes the node class. A node holds a key, the value stored with it, references to two children, with `None` standing for an empty subtree, and its height, which the AVL code below needs:
 
 ```python
-def make_node(key):
-    return {"key": key, "left": None, "right": None}
+class Node:
+    def __init__(self, key, value=None):
+        self.key = key
+        self.value = value
+        self.left = None
+        self.right = None
+        self.height = 1          # a leaf has height 1; an empty tree has height 0
 
-def insert(root, key):
+def insert(root, key, value=None):
     if root is None:                      # empty spot found: base case
-        return make_node(key)
-    if key < root["key"]:
-        root["left"] = insert(root["left"], key)
-    elif key > root["key"]:
-        root["right"] = insert(root["right"], key)
+        return Node(key, value)
+    if key < root.key:
+        root.left = insert(root.left, key, value)
+    elif root.key < key:
+        root.right = insert(root.right, key, value)
+    else:                                 # key already present
+        root.value = value                # replace its value
     return root                           # hand the subtree back up
 ```
 
-Each call returns the root of its subtree, and the caller stores it back into the link it came down. A key already present is left alone, so keys stay distinct.
+Each call returns the root of its subtree, and the caller stores it back into the link it came down. A key already present gets the new value and stays where it is, so keys stay distinct. Keys are compared only with `<`, which is all the lab allows, so the second test is written `root.key < key` rather than `key > root.key`.
 
 <Fold title="Details: the returned root, a trace, and the proof">
 
-The function returns the root of the subtree after insertion, and every caller stores that result back into the link it came down: `root["left"] = insert(root["left"], key)`. Most of the time the returned node is the same node that was passed in, so the assignment changes nothing. It matters at exactly one place, the bottom, where the base case creates the new node and the frame above attaches it. (For AVL trees it will also matter wherever a rotation changes a subtree's root.) A key that is already present matches neither branch and is left alone, so the keys stay distinct. Sending equal keys right with a plain `else` would store duplicates and break the strict inequality in the definition.
+The function returns the root of the subtree after insertion, and every caller stores that result back into the link it came down: `root.left = insert(root.left, key, value)`. Most of the time the returned node is the same node that was passed in, so the assignment changes nothing. It matters at exactly one place, the bottom, where the base case creates the new node and the frame above attaches it. (For AVL trees it will also matter wherever a rotation changes a subtree's root.) A key that is already present matches neither comparison and falls to the last branch, which replaces its value without adding a node, so the keys stay distinct. Sending equal keys right with a plain `else` would store duplicates and break the strict inequality in the definition.
 
 To see the call stack at work, insert 40 into the tree built from 10, 50, 30, 70, 20:
 
@@ -183,7 +190,7 @@ To see the call stack at work, insert 40 into the tree built from 10, 50, 30, 70
 
 At the moment of the base case, four frames are on the stack, one per level of the path, and they resume in reverse order.
 
-The correctness of `insert` is a structural induction. Claim: if `root` is a BST with key set `S`, then `insert(root, key)` returns a BST with key set `S ∪ {key}` (the union of `S` and the new key). For the empty tree, the result is a single node, which is a BST. For a non-empty tree with `key < root["key"]`, the inductive hypothesis says the recursive call returns a BST whose keys are the old left keys plus `key`. All of those are smaller than the root's key: the old ones by the BST property, and `key` by the comparison that sent us left. The right subtree is unchanged, so the whole tree is still a BST. The case `key > root["key"]` is symmetric, and the equal case changes nothing. Notice that the argument needs the whole-subtree form of the property, and it is exactly the comparison on the way down that guarantees it.
+The correctness of `insert` is a structural induction. Claim: if `root` is a BST with key set `S`, then `insert(root, key)` returns a BST with key set `S ∪ {key}` (the union of `S` and the new key). For the empty tree, the result is a single node, which is a BST. For a non-empty tree with `key < root.key`, the inductive hypothesis says the recursive call returns a BST whose keys are the old left keys plus `key`. All of those are smaller than the root's key: the old ones by the BST property, and `key` by the comparison that sent us left. The right subtree is unchanged, so the whole tree is still a BST. The case `root.key < key` is symmetric, and the equal case changes only a value, not the keys. Notice that the argument needs the whole-subtree form of the property, and it is exactly the comparison on the way down that guarantees it.
 
 </Fold>
 
@@ -192,19 +199,25 @@ Searching follows the same path without changing anything. It can be written rec
 ```python
 def search_rec(root, key):
     if root is None:
-        return False
-    if key == root["key"]:
-        return True
-    side = "left" if key < root["key"] else "right"
-    return search_rec(root[side], key)
+        return None
+    if key < root.key:
+        return search_rec(root.left, key)
+    if root.key < key:
+        return search_rec(root.right, key)
+    return root                           # neither smaller nor larger: found
 
 def search_iter(root, key):
     while root is not None:
-        if key == root["key"]:
-            return True
-        root = root["left"] if key < root["key"] else root["right"]
-    return False
+        if key < root.key:
+            root = root.left
+        elif root.key < key:
+            root = root.right
+        else:
+            return root
+    return None
 ```
+
+Both return the node holding the key, or `None`, so the same function answers `key in tree` (is the result a node?) and `tree.get(key)` (the node's value).
 
 The recursive call in `search_rec` is the last thing the function does, and nothing is done with its result except to return it, so the loop in `search_iter` can replace it directly. The iterative version uses no extra stack frames, so it cannot hit the recursion limit however tall the tree is.
 
@@ -433,6 +446,114 @@ Deleting a node with no children simply removes it, and a node with one child is
 
 </Fold>
 
+## The AVLTree class
+
+Lab 08 wraps the nodes in a class `AVLTree`, a map from keys to values. The template fixes the constructor, which sets `root` to `None` and `size` to 0, and gives `from_root`, `__len__` and `height()`; the student writes search, `items`, `insert`, `delete` and `range_query`. Each operation is the BST code above, with `rebalance` called on every node on the way back up and `size` kept up to date. Keys may be any values that support `<` and `<=`, so the code compares with those and nothing else.
+
+```python
+class AVLTree:
+    def insert(self, key, value=None):
+        self.root = self._insert(self.root, key, value)
+
+    def _insert(self, node, key, value):
+        if node is None:                   # empty spot: a new key
+            self.size += 1
+            return Node(key, value)
+        if key < node.key:
+            node.left = self._insert(node.left, key, value)
+        elif node.key < key:
+            node.right = self._insert(node.right, key, value)
+        else:                              # key present: replace the value,
+            node.value = value             # the size does not change
+            return node
+        return rebalance(node)
+
+    def delete(self, key):
+        if key not in self:                # check first, so the tree is unchanged
+            raise KeyError(key)
+        self.root = self._delete(self.root, key)
+        self.size -= 1
+```
+
+`delete` looks the key up before touching anything, so a missing key raises `KeyError` with nothing modified. An implementation that decrements `size` first, or changes nodes before it discovers the key is missing, leaves the tree changed, and a property test that compares the tree before and after a failed delete catches it.
+
+<Fold title="Details: the rest of the class">
+
+Deletion follows the three cases from the previous section. The recursion is only entered when the key is present, so it never reaches `None`.
+
+```python
+    def _delete(self, node, key):
+        if key < node.key:
+            node.left = self._delete(node.left, key)
+        elif node.key < key:
+            node.right = self._delete(node.right, key)
+        else:
+            if node.left is None:          # zero or one child
+                return node.right
+            if node.right is None:
+                return node.left
+            succ = node.right              # two children: in-order successor
+            while succ.left is not None:
+                succ = succ.left
+            node.key, node.value = succ.key, succ.value
+            node.right = self._delete(node.right, succ.key)
+        return rebalance(node)
+```
+
+Search is the loop from `search_iter`. `get` must test whether a node was found, not whether its value is truthy: `node.value or default` would return `default` for a key that stores `0`, `""` or `None`.
+
+```python
+    def _find(self, key):
+        node = self.root
+        while node is not None:
+            if key < node.key:
+                node = node.left
+            elif node.key < key:
+                node = node.right
+            else:
+                return node
+        return None
+
+    def __contains__(self, key):
+        return self._find(key) is not None
+
+    def get(self, key, default=None):
+        node = self._find(key)
+        return default if node is None else node.value
+```
+
+`items` is an in-order traversal, so the pairs come out in increasing key order. `range_query` is the same traversal with pruning: the left subtree can only hold keys `≥ lo` if the node's key is larger than `lo`, and the right subtree can only hold keys `≤ hi` if the node's key is smaller than `hi`. Whole subtrees outside the range are skipped, so a query costs O(log n + k) for k results. When `lo > hi` no key passes the test, and the result is empty.
+
+```python
+    def items(self):
+        out = []
+        def walk(node):
+            if node is not None:
+                walk(node.left)
+                out.append((node.key, node.value))
+                walk(node.right)
+        walk(self.root)
+        return out
+
+    def range_query(self, lo, hi):
+        out = []
+        def walk(node):
+            if node is None:
+                return
+            if lo < node.key:              # left subtree may hold keys >= lo
+                walk(node.left)
+            if lo <= node.key <= hi:
+                out.append(node.key)
+            if node.key < hi:              # right subtree may hold keys <= hi
+                walk(node.right)
+        walk(self.root)
+        return out
+```
+
+The recursion in `items` and `range_query` is only as deep as the tree, which an AVL tree keeps below 1.44 log₂ n, so 10 000 keys need at most 18 frames.
+
+</Fold>
+
 ## Checking the AVL invariant
 
 Lab 08 asks for a function `check_avl(tree)` that returns `True` exactly when the tree satisfies the three AVL conditions and `tree.size` equals the number of nodes, and returns `False` otherwise, never raising an exception. This is a test oracle for property-based testing: after any sequence of random insertions and deletions, `check_avl` must still hold. A checker is only useful if it is strict, so it must not take anything about the tree on trust.
@@ -456,9 +577,9 @@ def check(node, lo=None, hi=None):
 def check_avl(tree):
     try:
         _, count = check(tree.root)
-    except ValueError:
+        return count == tree.size
+    except Exception:                      # "never raise": any failure means invalid
         return False
-    return count == tree.size
 ```
 
 <Fold title="Details: how the checker works">
@@ -467,7 +588,7 @@ The checker is one recursive function on subtrees, written by structural inducti
 
 Each part of the function corresponds to one of the conditions. The interval test enforces BST order over whole subtrees: going left narrows the upper bound to the current key, going right narrows the lower bound, and the inherited bound is passed on unchanged. Keys are compared only with `<`, as Lab 08 requires, and because the interval is open, a key equal to one of its ancestors is rejected too. On the 6-under-5 tree, the calls are `check(5)` with no bounds, `check(2)` with bounds `(None, 5)`, `check(1)` with `(None, 2)`, and `check(6)` with `(2, 5)`, where the test `6 < 5` fails.
 
-The balance test uses the heights `hl` and `hr` that the recursive calls *computed*, not the values stored in the nodes. This is the reason for returning heights at all. A buggy tree might store heights that are wrong, or store correct heights but be unbalanced; a checker that read `node.left.height` would be fooled by the first kind, because it would be checking the tree's own possibly false claims about itself. Computing the real height and then comparing it with the stored one catches both kinds separately. Finally, counting the nodes catches an implementation whose `size` field drifts from the actual contents. Together these catch every faulty tree the lab grader tries: a parent and child out of order, a key out of order deep in the tree or equal to an ancestor's, an unbalanced tree with correct stored heights, a node storing a wrong height, and a wrong size.
+The balance test uses the heights `hl` and `hr` that the recursive calls *computed*, not the values stored in the nodes. This is the reason for returning heights at all. A buggy tree might store heights that are wrong, or store correct heights but be unbalanced; a checker that read `node.left.height` would be fooled by the first kind, because it would be checking the tree's own possibly false claims about itself. Computing the real height and then comparing it with the stored one catches both kinds separately. Finally, counting the nodes catches an implementation whose `size` field drifts from the actual contents. The `except Exception` keeps the promise never to raise: a broken tree might hold a key that cannot be compared, or a `size` attribute that is missing, and either way the answer is `False`. Together these catch every faulty tree the lab grader tries: a parent and child out of order, a key out of order deep in the tree or equal to an ancestor's, an unbalanced tree with correct stored heights, a node storing a wrong height, and a wrong size.
 
 </Fold>
 

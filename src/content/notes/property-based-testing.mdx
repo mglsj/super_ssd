@@ -306,6 +306,32 @@ The lab asks for two strategies, and both must build their data constructively, 
 
 A filter would reject almost every list. Instead, the composite function keeps track of the keys inserted so far and, when it draws a delete, draws the key from that set. The grader also checks that the examples are varied: some must insert a key twice (testing replacement), some must contain deletes, and some must be long.
 
+```python
+values = st.none() | st.booleans() | st.integers() | st.text(max_size=3)
+
+def operations():
+    @st.composite
+    def ops(draw):
+        result, present = [], []
+        for _ in range(draw(st.integers(0, 60))):
+            if present and draw(st.booleans()):
+                key = draw(st.sampled_from(present))   # present right now
+                present.remove(key)
+                result.append(("delete", key))
+            else:
+                keys = st.integers(-100, 100)
+                if present:
+                    keys = keys | st.sampled_from(present)   # sometimes re-insert
+                key = draw(keys)
+                if key not in present:
+                    present.append(key)
+                result.append(("insert", key, draw(values)))
+        return result
+    return ops()
+```
+
+The narrow key range and the `sampled_from(present)` branch make repeated keys common, and the values include the falsy ones (`None`, `False`, `0`, `""`) that trip up a careless `get`.
+
 </Fold>
 
 `avl_trees(h)` generates valid AVL trees of height exactly `h`. The key observation is about shapes. A tree of height `h ≥ 2` has a root whose subtrees, by the balance condition, have heights `(h−1, h−1)`, `(h−1, h−2)` or `(h−2, h−1)`. So a shape can be drawn recursively:
@@ -316,14 +342,43 @@ def shape(draw, h):
     if h == 0:
         return None
     if h == 1:
-        return ("leaf",)
-    l, r = draw(st.sampled_from([(h - 1, h - 1), (h - 1, h - 2), (h - 2, h - 1)]))
-    return ("node", draw(shape(l)), draw(shape(r)))
+        return (None, None)              # a leaf: two empty subtrees
+    hl, hr = draw(st.sampled_from([(h - 1, h - 1), (h - 1, h - 2), (h - 2, h - 1)]))
+    return (draw(shape(hl)), draw(shape(hr)))
 ```
 
 <Fold title="Details: from shape to valid tree">
 
 Having drawn a shape, we count its nodes, draw that many distinct integer keys, sort them, and hand them out in in-order (left subtree, node, right subtree). The in-order assignment makes the BST order hold, the shape makes the balance hold, and setting each node's height while building gives correct heights. Every tree is valid by construction. Just as importantly, *every* valid tree of height `h` can be produced, including the smallest. The smallest AVL trees of heights 0, 1, 2, … have 0, 1, 2, 4, 7, 12, 20, … nodes, following `N(h) = N(h−1) + N(h−2) + 1`, and the grader checks that `avl_trees(5)` produces a 12-node tree and that `avl_trees(3)` produces all 15 shapes of height 3. A generator that misses some shapes leaves the bugs that only appear in those shapes untested.
+
+The template asks for the Nodes to be built directly, without calling `insert`, and wrapped with `AVLTree.from_root`, which counts the nodes to set `size`:
+
+```python
+def avl_trees(height):
+    def count(s):
+        return 0 if s is None else 1 + count(s[0]) + count(s[1])
+
+    def build(s, keys):                    # keys: an increasing iterator
+        if s is None:
+            return None
+        left = build(s[0], keys)           # in-order: left, node, right
+        node = Node(next(keys))
+        node.left = left
+        node.right = build(s[1], keys)
+        node.height = 1 + max(left.height if left else 0,
+                              node.right.height if node.right else 0)
+        return node
+
+    @st.composite
+    def trees(draw):
+        s = draw(shape(height))
+        n = count(s)
+        keys = draw(st.lists(st.integers(), min_size=n, max_size=n, unique=True))
+        return AVLTree.from_root(build(s, iter(sorted(keys))))
+    return trees()
+```
+
+Here `shape` is the composite above, defined at module level or inside `avl_trees`. Shrinking works well with this design: Hypothesis shrinks the shape choices towards the first option and the keys towards small integers, so a failing tree is reported in a small, readable form.
 
 </Fold>
 
@@ -354,6 +409,81 @@ Different properties catch different bugs, so a strong suite combines several. T
 | `n` sorted inserts give `height() ≤ 1.44·log₂(n+2)` | missing rebalancing |
 
 The falsy-value property deserves a word. A tempting implementation of `get` returns `node.value or default`. That returns `default` whenever the stored value is falsy, so `get(k, "x")` on a key storing `0` wrongly returns `"x"`. Only a test that stores falsy values finds this. Similarly, the height bound catches a tree that never rebalances: inserting keys in sorted order into a plain BST gives a chain of height `n`, while an AVL tree's height stays below about `1.44·log₂(n+2)`. The lab requires 10,000 sorted inserts to give height at most 18.
+
+</Fold>
+
+<Fold title="Details: the tests in code">
+
+The tests may use only the public API. A small helper applies one operation to both the tree and a `dict` model:
+
+```python
+def apply(tree, model, op):
+    if op[0] == "insert":
+        tree.insert(op[1], op[2])
+        model[op[1]] = op[2]
+    else:
+        tree.delete(op[1])
+        del model[op[1]]
+
+@given(operations())
+def test_behaves_like_a_dict(ops):
+    tree, model = AVLTree(), {}
+    for op in ops:
+        apply(tree, model, op)
+        assert check_avl(tree)
+        assert len(tree) == len(model)
+    assert tree.items() == sorted(model.items())
+    for k in range(-101, 102):
+        assert (k in tree) == (k in model)
+        assert tree.get(k, "absent") == model.get(k, "absent")
+
+@given(operations(), st.integers(-110, 110), st.integers(-110, 110))
+def test_range_query(ops, lo, hi):
+    tree, model = AVLTree(), {}
+    for op in ops:
+        apply(tree, model, op)
+    assert tree.range_query(lo, hi) == sorted(k for k in model if lo <= k <= hi)
+
+@given(operations())
+def test_delete_absent_key(ops):
+    tree, model = AVLTree(), {}
+    for op in ops:
+        apply(tree, model, op)
+    absent = max(model, default=0) + 1      # absent by construction
+    before = tree.items()
+    try:
+        tree.delete(absent)
+        assert False, "no KeyError"
+    except KeyError:
+        pass
+    assert tree.items() == before and len(tree) == len(model) and check_avl(tree)
+
+@given(st.integers(0, 6), st.data())
+def test_delete_every_key_from_any_shape(h, data):
+    tree = data.draw(avl_trees(h))
+    keys = data.draw(st.permutations([k for k, _ in tree.items()]))
+    for k in keys:
+        tree.delete(k)
+        assert check_avl(tree) and k not in tree
+    assert len(tree) == 0 and tree.root is None
+
+@given(st.lists(st.integers(), unique=True), st.sampled_from([0, None, False, ""]))
+def test_falsy_values_are_returned(keys, falsy):
+    tree = AVLTree()
+    for k in keys:
+        tree.insert(k, falsy)
+    for k in keys:
+        assert tree.get(k, "x") is falsy
+
+@given(st.integers(0, 2000))
+def test_sorted_inserts_stay_short(n):
+    tree = AVLTree()
+    for k in range(n):
+        tree.insert(k)
+    assert tree.height() <= 1.4405 * math.log2(n + 2) - 0.3277
+```
+
+The absent key in `test_delete_absent_key` is one more than the largest key present, so no `assume` is needed. In `test_delete_every_key_from_any_shape`, `st.data()` lets the test draw the permutation after it has seen the tree.
 
 </Fold>
 
